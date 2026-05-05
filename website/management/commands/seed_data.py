@@ -2,64 +2,65 @@ from django.core.management.base import BaseCommand
 from website.models import BusinessInfo, ServiceCategory, Service, StaffMember, Testimonial
 
 class Command(BaseCommand):
-    help = 'Injeta os dados iniciais do Cabeleireiro'
+    help = 'Injeta os dados iniciais do Cabeleireiro Teresa Pereira'
 
     def handle(self, *args, **kwargs):
-        self.stdout.write("A iniciar injeção de dados...")
+        self.stdout.write("A iniciar injeção de dados para Teresa Pereira...")
 
         # 1. Business Info
-        info, created = BusinessInfo.objects.get_or_create(
-            name="Duo Space Cabeleireiro",
-            defaults={
-                'address': 'R. Henrique Lopes 170, 4900-716 Viana do Castelo',
-                'phone': '966 579 620',
-                'whatsapp': '351966579620',
-                'schedule': 'Seg, Ter, Qui, Sex: 09:30 – 19:00\nSábado: 08:30 – 18:00\nQuarta e Domingo: Encerrado',
-                'google_maps_url': 'https://maps.google.com/?q=R.+Henrique+Lopes+170,+Viana+do+Castelo'
-            }
+        BusinessInfo.objects.all().delete()
+        info = BusinessInfo.objects.create(
+            name="Teresa Pereira Cabeleireiro e Estética",
+            address="Praça Alto Minho Loja 109 - CC Torre Active Center, 4900-439 Viana do Castelo",
+            phone="963474965",
+            email="cabeleireirosteresapereira@hotmail.com",
+            schedule="Segunda a Sábado das 09:00 às 19:00. Domingo: Encerrado.",
+            google_maps_url="https://maps.google.com/?q=Praça+Alto+Minho+Loja+109,+Viana+do+Castelo",
+            description="Um espaço renovado e acolhedor localizado a poucos minutos do centro da Cidade de Viana do Castelo, onde a Beleza e o bem-estar acontecem."
         )
-        if created:
-            self.stdout.write(self.style.SUCCESS('BusinessInfo criado com sucesso!'))
+        self.stdout.write(self.style.SUCCESS('BusinessInfo criado com sucesso!'))
 
         # 2. Categorias
-        cat_estetica, _ = ServiceCategory.objects.get_or_create(name="Estética Avançada", defaults={'order': 1})
-        cat_epilacao, _ = ServiceCategory.objects.get_or_create(name="Epilação", defaults={'order': 2})
+        ServiceCategory.objects.all().delete()
+        cat_cabelo = ServiceCategory.objects.create(name="Cabeleireiro", order=1)
+        cat_estetica = ServiceCategory.objects.create(name="Estética e Bem-estar", order=2)
+        cat_unhas = ServiceCategory.objects.create(name="Manicure e Pedicure", order=3)
 
-        # 3. Serviços Estética
-        servicos_estetica = [
-            ("Lipocavitação", 35.00),
-            ("Limpeza de pele completa com ampola", 24.50),
+        # 3. Serviços (Preço fixo 15.00€ para demo)
+        Service.objects.all().delete()
+        servicos = [
+            # Cabeleireiro
+            ("Tratamento Capilar", cat_cabelo),
+            ("Próteses e Perucas (Alopecia/Oncologia)", cat_cabelo),
+            # Estética
+            ("Tratamentos Rosto e Corpo", cat_estetica),
+            ("Maquilhagem", cat_estetica),
+            ("Massagens", cat_estetica),
+            ("Depilação", cat_estetica),
+            # Unhas
+            ("Manicure e Pedicure", cat_unhas),
+            ("Unhas de Gel", cat_unhas),
         ]
         
-        for nome, preco in servicos_estetica:
-            Service.objects.get_or_create(name=nome, category=cat_estetica, defaults={'price': preco})
+        for nome, categoria in servicos:
+            Service.objects.create(name=nome, category=categoria, price=15.00)
 
-        # 4. Serviços Epilação
-        servicos_epilacao = [
-            ("Epilação de Perna completa + virilha + axila", 13.00),
-            ("Epilação de Meia perna + virilha + axila", 11.00),
-            ("Epilação de Axila + buço + sobrancelha", 6.00),
-        ]
-
-        for nome, preco in servicos_epilacao:
-            Service.objects.get_or_create(name=nome, category=cat_epilacao, defaults={'price': preco})
-
-        # 5. Membros da Equipa
-        StaffMember.objects.get_or_create(name="Direção Duo Space", defaults={'role': 'Diretora e Especialista'})
-        StaffMember.objects.get_or_create(name="Equipa Duo Space", defaults={'role': 'Esteticista'})
+        # 4. Membros da Equipa
+        StaffMember.objects.all().delete()
+        StaffMember.objects.create(name="Teresa Pereira", role="Diretora e Especialista")
+        StaffMember.objects.create(name="Equipa Teresa Pereira", role="Esteticista")
         
-        # 6. Testemunhos Premium
-        Testimonial.objects.get_or_create(
-            client_name="Maria João",
-            defaults={'text': 'Melhor depilação a laser de Viana do Castelo! O espaço é muito acolhedor. Recomendo a 100%!', 'rating': 5}
+        # 5. Testemunhos
+        Testimonial.objects.all().delete()
+        Testimonial.objects.create(
+            client_name="Ana Silva",
+            text='Excelente atendimento e um espaço muito acolhedor. Recomendo os tratamentos de rosto!', 
+            rating=5
         )
-        Testimonial.objects.get_or_create(
-            client_name="Inês Castro",
-            defaults={'text': 'Experimentei a massagem relaxante e foi incrível. Preços justos para um serviço super premium.', 'rating': 5}
-        )
-        Testimonial.objects.get_or_create(
-            client_name="Carla Mendes",
-            defaults={'text': 'Atendimento rápido e muito focado no cliente. Adoro a simpatia de toda a equipa.', 'rating': 4}
+        Testimonial.objects.create(
+            client_name="Ricardo Gomes",
+            text='Profissionalismo de topo. A Teresa é fantástica.', 
+            rating=5
         )
 
-        self.stdout.write(self.style.SUCCESS('Dados injetados com sucesso!'))
+        self.stdout.write(self.style.SUCCESS('Dados da Teresa Pereira injetados com sucesso!'))

@@ -68,17 +68,13 @@ def get_available_times(request):
         
     weekday = selected_date.weekday()
     
-    # Qua (2) e Dom (6) está fechado
-    if weekday == 2 or weekday == 6:
+    # Dom (6) está fechado
+    if weekday == 6:
         return JsonResponse({'available_times': []})
         
-    # Horários padrão
-    if weekday == 5: # Sábado: 08:30 - 18:00
-        start_time = dt_time(8, 30)
-        end_time = dt_time(18, 0)
-    else: # Seg, Ter, Qui, Sex: 09:30 - 19:00
-        start_time = dt_time(9, 30)
-        end_time = dt_time(19, 0)
+    # Segunda a Sábado: 09:00 - 19:00
+    start_time = dt_time(9, 0)
+    end_time = dt_time(19, 0)
         
     # Gerar blocos de 30 min
     available_blocks = []

@@ -10,6 +10,7 @@ class BusinessInfo(models.Model):
     nif = models.CharField(max_length=20, null=True, blank=True, verbose_name="NIF")
     schedule = models.TextField(verbose_name="Horário de Funcionamento")
     google_maps_url = models.URLField(max_length=500, blank=True, null=True, verbose_name="Link do Google Maps")
+    description = models.TextField(blank=True, null=True, verbose_name="Descrição da Empresa")
 
     def __str__(self):
         return self.name

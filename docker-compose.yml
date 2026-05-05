@@ -3,7 +3,7 @@ version: '3.8'
 services:
   web:
     build: .
-    container_name: duo_space_web
+    container_name: teresa_pereira_web
     volumes:
       - .:/app
     # Mapear porta interna (8000) para uma externa de acordo com a regra (5010)
