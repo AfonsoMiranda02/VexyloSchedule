@@ -1,0 +1,30 @@
+/* Custom Admin CSS for Duo Space */
+
+/* Limit logo size on login page */
+.login-logo img {
+    max-width: 150px !important;
+    height: auto !important;
+    margin-bottom: 20px;
+    /* In case there's still a slight background artifact */
+    mix-blend-mode: multiply;
+}
+
+/* Ensure login box is centered and clean */
+.login-box {
+    margin-top: 5% !important;
+}
+
+.login-card-body {
+    border-radius: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.login-page {
+    background: #FAF9F6 !important; /* bgSoft from tailwind config */
+}
+
+/* Fix for sidebar logo as well */
+.brand-link .brand-image {
+    max-height: 33px;
+    width: auto;
+}

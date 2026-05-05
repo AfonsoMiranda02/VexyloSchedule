@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: duo_space_web
+    volumes:
+      - .:/app
+    # Mapear porta interna (8000) para uma externa de acordo com a regra (5010)
+    ports:
+      - "5010:8000"
+    environment:
+      - DEBUG=1
+      - PORT=8000
+      - DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1]

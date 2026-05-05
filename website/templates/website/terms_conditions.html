@@ -1,0 +1,61 @@
+{% extends 'website/base.html' %}
+
+{% block title %}Termos e Condições{% endblock %}
+
+{% block content %}
+<div class="flex-grow bg-bgSoft py-12 px-4 sm:px-6 lg:px-8 min-h-screen">
+    <div class="max-w-4xl mx-auto bg-white p-10 rounded-3xl shadow-sm border border-gray-100 mt-10">
+        <h1 class="text-3xl font-bold text-primary font-heading mb-6">Termos e Condições de Serviço</h1>
+        
+        <div class="prose prose-primary text-gray-700 leading-relaxed text-justify sm:text-left">
+            <p class="mb-4">
+                Bem-vindo(a) ao(à) <strong>{{ business_info.name|default:"nossa empresa" }}</strong>. Ao realizar uma marcação e utilizar os nossos serviços,
+                o cliente concorda com os termos aqui apresentados.
+            </p>
+
+            <h2 class="text-xl font-bold text-gray-800 mt-8 mb-4 font-heading">1. Política de Marcações</h2>
+            <p class="mb-4">
+                Todas as marcações estão sujeitas a disponibilidade e confirmação. Ao efetuar um agendamento online, assumimos o 
+                seu compromisso em comparecer à hora e data estipuladas.
+            </p>
+
+            <h2 class="text-xl font-bold text-gray-800 mt-8 mb-4 font-heading">2. Política de Cancelamento e Faltas</h2>
+            <p class="mb-4">
+                Compreendemos que imprevistos acontecem. No entanto, o seu horário foi reservado exclusivamente para si.
+            </p>
+            <ul class="list-disc pl-6 mb-4 space-y-2">
+                <li>Pedimos que qualquer <strong>cancelamento ou reagendamento seja comunicado com pelo menos 24 horas de antecedência</strong>.</li>
+                <li>Faltas de comparência sem aviso prévio poderão impossibilitar a realização de marcações futuras de forma autónoma através do nosso website.</li>
+            </ul>
+
+            <h2 class="text-xl font-bold text-gray-800 mt-8 mb-4 font-heading">3. Pagamentos e Faturação</h2>
+            <p class="mb-4">
+                Todas as reservas feitas através deste website são gratuitas. O website não recolhe dados de pagamento nem processa transações financeiras.
+            </p>
+            <p class="mb-4">
+                O pagamento integral dos serviços prestados será efetuado presencialmente nas nossas instalações. A correspondente fatura será emitida presencialmente no momento do pagamento.
+            </p>
+
+            <h2 class="text-xl font-bold text-gray-800 mt-8 mb-4 font-heading">4. Atrasos e Tolerância</h2>
+            <p class="mb-4">
+                O respeito pelo horário garante a qualidade do nosso serviço a todos os clientes.
+            </p>
+            <ul class="list-disc pl-6 mb-4 space-y-2">
+                <li>Oferecemos uma tolerância máxima de <strong>15 minutos</strong> de atraso.</li>
+                <li>Após este período, reservamo-nos o direito de <strong>recusar a prestação do serviço</strong> ou de reduzir o tempo do mesmo, 
+                para não prejudicar a marcação do cliente seguinte.</li>
+            </ul>
+
+            <h2 class="text-xl font-bold text-gray-800 mt-8 mb-4 font-heading">5. Preços e Orçamentação</h2>
+            <p class="mb-4">
+                Os preços apresentados no website servem como referência para os serviços base. Serviços técnicos de cabeleireiro ou estética 
+                que exijam produtos adicionais serão orçamentados em salão antes do seu início. O pagamento é efetuado presencialmente no final do serviço.
+            </p>
+            
+            <p class="text-sm text-gray-500 mt-12 pt-6 border-t border-gray-100">
+                Última atualização: {% now "j \d\e F \d\e Y" %}
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

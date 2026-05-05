@@ -1,0 +1,193 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Duo Space Cabeleireiro </title>
+    <meta name="description" content="Cabeleireiro Unissexo e Estética Avançada em Viana do Castelo. Especialistas em bem-estar, rosto e depilação a laser.">
+    
+    <!-- Google Fonts: Outfit (Headings) and Inter (Body) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{% static 'website/css/style.css' %}">
+</head>
+<body>
+
+    <!-- NAVIGATION -->
+    <header class="header">
+        <div class="container header-container">
+            <a href="#home" class="logo">
+                <span class="logo-text">Duo Space</span>
+            </a>
+            <nav class="nav">
+                <ul class="nav-list">
+                    <li><a href="#home" class="nav-link">Início</a></li>
+                    <li><a href="#features" class="nav-link">O Espaço</a></li>
+                    <li><a href="#services" class="nav-link">Serviços e Preços</a></li>
+                    <li><a href="#contacts" class="nav-link">Contactos</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <!-- 1. HERO SECTION -->
+    <section id="home" class="hero">
+        <div class="hero-content">
+            <h1 class="hero-title">Duo Space</h1>
+            <h2 class="hero-subtitle">Cabeleireiro Unissexo e Estética Avançada</h2>
+            
+            <a href="https://wa.me/351966579620" target="_blank" class="btn btn-primary" aria-label="Faça a sua marcação via WhatsApp">
+                <i class="fa-brands fa-whatsapp"></i>
+                Faça a sua Marcação
+            </a>
+        </div>
+    </section>
+
+    <!-- 2. CARACTERÍSTICAS DO ESPAÇO -->
+    <section id="features" class="features">
+        <div class="container">
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fa-solid fa-wheelchair"></i>
+                    </div>
+                    <h3 class="feature-title">Estacionamento e Entrada Acessíveis</h3>
+                    <p style="color: var(--color-text-muted); font-size: 0.9rem; margin-top: 0.5rem;">Preparado para receber pessoas com mobilidade reduzida.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fa-solid fa-child-reaching"></i>
+                    </div>
+                    <h3 class="feature-title">Ambiente Child-Friendly</h3>
+                    <p style="color: var(--color-text-muted); font-size: 0.9rem; margin-top: 0.5rem;">Um espaço tranquilo e indicado para crianças.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fa-regular fa-calendar-check"></i>
+                    </div>
+                    <h3 class="feature-title">Atendimento Personalizado</h3>
+                    <p style="color: var(--color-text-muted); font-size: 0.9rem; margin-top: 0.5rem;">Aconselha-se marcação prévia para sua comodidade.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. MENU DE SERVIÇOS E PREÇOS -->
+    <section id="services" class="services">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Os Nossos Serviços</h2>
+                <p class="section-subtitle">Cuidados especializados para o seu corpo e mente</p>
+            </div>
+            
+            <div class="services-grid">
+                <!-- Categoria A -->
+                <div class="service-category">
+                    <h3 class="category-title">
+                        <i class="fa-solid fa-spa" style="color: var(--color-primary);"></i> 
+                        Estética Avançada
+                    </h3>
+                    <p class="category-subtitle">Tratamentos corporais e faciais de <strong>alta qualidade</strong></p>
+                    
+                    <ul class="service-list">
+                        <li class="service-item">
+                            <span class="service-name">Lipocavitação</span>
+                            <span class="service-price">35€</span>
+                        </li>
+                        <li class="service-item">
+                            <span class="service-name">Limpeza de pele completa com ampola</span>
+                            <span class="service-price">24,50€</span>
+                        </li>
+                    </ul>
+                </div>
+                
+                <!-- Categoria B -->
+                <div class="service-category">
+                    <h3 class="category-title">
+                        <i class="fa-solid fa-wand-magic-sparkles" style="color: var(--color-primary);"></i>
+                        Epilação
+                    </h3>
+                    <p class="category-subtitle">Epilação profissional com cera.</p>
+                    
+                    <ul class="service-list">
+                        <li class="service-item">
+                            <span class="service-name">Perna completa + virilha + axila</span>
+                            <span class="service-price">13€</span>
+                        </li>
+                        <li class="service-item">
+                            <span class="service-name">Meia perna + virilha + axila</span>
+                            <span class="service-price">11€</span>
+                        </li>
+                        <li class="service-item">
+                            <span class="service-name">Axila + buço + sobrancelha</span>
+                            <span class="service-price">6€</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. FOOTER -->
+    <footer id="contacts" class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <!-- Informações de Contacto -->
+                <div class="footer-col">
+                    <h4><i class="fa-solid fa-location-dot"></i> Onde Estamos</h4>
+                    <div class="footer-info">
+                        <i class="fa-solid fa-map-pin"></i>
+                        <p><a href="https://maps.google.com/?q=R.+Henrique+Lopes+170,+Viana+do+Castelo" target="_blank" class="footer-link">R. Henrique Lopes 170,<br>4900-716 Viana do Castelo</a></p>
+                    </div>
+                    
+                    <h4 style="margin-top: 2.5rem;"><i class="fa-solid fa-address-book"></i> Contactos</h4>
+                    <div class="footer-info">
+                        <i class="fa-solid fa-phone"></i>
+                        <p>
+                            <a href="tel:+351966579620" class="footer-link">966 579 620</a><br>
+                            <span style="font-size: 0.85rem; opacity: 0.8;">(Telefone e WhatsApp)</span>
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Horário -->
+                <div class="footer-col">
+                    <h4><i class="fa-regular fa-clock"></i> Horário de Funcionamento</h4>
+                    <ul class="footer-schedule">
+                        <li>
+                            <span>Seg, Ter, Qui, Sex</span>
+                            <span>09:30 – 19:00</span>
+                        </li>
+                        <li>
+                            <span>Sábado</span>
+                            <span>08:30 – 18:00</span>
+                        </li>
+                        <li class="closed">
+                            <span>Quarta-feira</span>
+                            <span>Encerrado</span>
+                        </li>
+                        <li class="closed">
+                            <span>Domingo</span>
+                            <span>Encerrado</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="footer-bottom">
+                <p>&copy; 2026 Duo Space Cabeleireiro. Todos os direitos reservados.</p>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>

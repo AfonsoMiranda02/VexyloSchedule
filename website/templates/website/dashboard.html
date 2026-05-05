@@ -1,0 +1,94 @@
+{% extends 'website/base.html' %}
+
+{% block title %}Área do Cliente{% endblock %}
+
+{% block content %}
+<div class="flex-grow bg-bgSoft pt-12 pb-12 px-4 sm:px-6 lg:px-8 min-h-screen">
+    <div class="max-w-6xl mx-auto">
+        
+        <!-- Header Dashboard -->
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+            <div>
+                <h1 class="text-4xl font-bold text-gray-900 font-heading">Olá, {{ user.first_name|default:user.username }}!</h1>
+                <p class="text-gray-500 mt-2 text-lg">Bem-vindo à sua área de cliente.</p>
+            </div>
+            <div class="flex gap-4 w-full md:w-auto">
+                <a href="{% url 'book_appointment' %}" class="flex-1 md:flex-none text-center bg-primary hover:bg-primaryHover text-white px-6 py-3 rounded-full font-medium transition shadow-md">
+                    <i class="fa-solid fa-plus mr-2"></i> Nova Marcação
+                </a>
+            </div>
+        </div>
+
+        <!-- Alertas/Mensagens -->
+        {% if messages %}
+        <div class="mb-8 space-y-2">
+            {% for message in messages %}
+            <div class="p-4 rounded-xl {% if message.tags == 'success' %}bg-green-50 text-green-800 border border-green-200{% else %}bg-blue-50 text-blue-800 border border-blue-200{% endif %}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
+            <i class="fa-regular fa-calendar-check text-primary"></i> As Suas Marcações
+        </h2>
+
+        <!-- Grelha de Marcações -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {% for apt in appointments %}
+            <div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 hover:shadow-md transition relative flex flex-col h-full">
+                
+                <div class="absolute top-6 right-6">
+                    {% if apt.status == 'Pendente' %}
+                        <span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-3 py-1 rounded-full">Pendente</span>
+                    {% elif apt.status == 'Confirmada' %}
+                        <span class="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full">Confirmada</span>
+                    {% else %}
+                        <span class="bg-red-100 text-red-800 text-xs font-bold px-3 py-1 rounded-full">Cancelada</span>
+                    {% endif %}
+                </div>
+
+                <h3 class="font-bold text-xl text-gray-900 mb-1 pr-24 leading-tight">{{ apt.service.name }}</h3>
+                <p class="text-primary font-bold mb-4">{{ apt.service.price }}€</p>
+                
+                <div class="space-y-3 text-sm text-gray-600 border-t border-gray-100 pt-5 mb-4 flex-grow">
+                    <p class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-primary"><i class="fa-regular fa-calendar"></i></span>
+                        {{ apt.date|date:"d M, Y" }}
+                    </p>
+                    <p class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-primary"><i class="fa-regular fa-clock"></i></span>
+                        {{ apt.time|time:"H:i" }}
+                    </p>
+                    {% if apt.staff_member %}
+                    <p class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-primary"><i class="fa-regular fa-user"></i></span>
+                        Preferência: {{ apt.staff_member.name }}
+                    </p>
+                    {% endif %}
+                </div>
+
+                <!-- SMART WHATSAPP BUTTON -->
+                {% if business_info.whatsapp %}
+                <a href="https://wa.me/{{ business_info.whatsapp }}?text=Olá! Acabei de registar uma marcação para o serviço *{{ apt.service.name }}* no dia {{ apt.date|date:'d/m/Y' }} às {{ apt.time|time:'H:i' }}." target="_blank" class="block w-full text-center bg-[#25D366] hover:bg-[#1DA851] text-white py-3 rounded-2xl font-bold transition shadow-sm mt-auto">
+                    <i class="fa-brands fa-whatsapp mr-2 text-xl align-middle"></i> Enviar Mensagem
+                </a>
+                {% endif %}
+            </div>
+            {% empty %}
+            <!-- Estado Vazio -->
+            <div class="col-span-full bg-white p-12 rounded-3xl border-2 border-dashed border-gray-200 text-center">
+                <div class="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fa-regular fa-calendar-xmark text-3xl text-gray-400"></i>
+                </div>
+                <h3 class="text-lg font-bold text-gray-900 mb-1">Sem marcações</h3>
+                <p class="text-gray-500 mb-6">Ainda não efetuou nenhuma marcação no nosso espaço.</p>
+                <a href="{% url 'book_appointment' %}" class="text-primary font-bold hover:text-primaryHover transition">Fazer primeira marcação &rarr;</a>
+            </div>
+            {% endfor %}
+        </div>
+
+    </div>
+</div>
+{% endblock %}

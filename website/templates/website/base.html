@@ -1,0 +1,211 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-PT" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ business_info.name|default:"Agência" }}{% endblock %}</title>
+    <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
+    
+    <!-- SEO & Open Graph -->
+    <meta name="description" content="Bem-vindo ao {{ business_info.name }} em {{ business_info.address }}. Marque já a sua sessão de cabeleireiro e estética avançada online.">
+    <meta name="keywords" content="cabeleireiro, estética, beleza, {{ business_info.address }}, depilação a laser, salão">
+    
+    <meta property="og:title" content="{{ business_info.name|default:'Agência' }}">
+    <meta property="og:description" content="Marque já a sua sessão de cabeleireiro e estética avançada online.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="{{ business_info.name|default:'Agência' }}">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: { colors: { primary: '#722F37', primaryHover: '#5A252C', bgSoft: '#FAF9F6' },
+                          fontFamily: { sans: ['Inter', 'sans-serif'], heading: ['Outfit', 'sans-serif'] } }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style> body { font-family: 'Inter', sans-serif; } h1, h2, h3, h4, h5, h6 { font-family: 'Outfit', sans-serif; } </style>
+</head>
+<body class="bg-bgSoft text-gray-800 antialiased flex flex-col min-h-screen pt-20">
+    
+    <!-- TOAST NOTIFICATIONS -->
+    {% if messages %}
+    <div id="toast-container" class="fixed top-5 right-5 z-[100] flex flex-col gap-3">
+        {% for message in messages %}
+        <div class="toast-message flex items-center p-4 pr-6 bg-white shadow-xl rounded-xl border-l-4 transition-all duration-500 ease-in-out {% if message.tags == 'error' %}border-red-500 text-red-700{% elif message.tags == 'success' %}border-green-500 text-green-700{% else %}border-primary text-primary{% endif %}">
+            {% if message.tags == 'error' %}
+                <i class="fa-solid fa-circle-exclamation mr-3 text-red-500 text-lg"></i>
+            {% elif message.tags == 'success' %}
+                <i class="fa-solid fa-circle-check mr-3 text-green-500 text-lg"></i>
+            {% else %}
+                <i class="fa-solid fa-circle-info mr-3 text-primary text-lg"></i>
+            {% endif %}
+            <div class="text-sm font-medium text-gray-800">
+                {{ message }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- NAVBAR FIXA E INTELIGENTE -->
+    <header class="fixed top-0 left-0 right-0 bg-white/95 backdrop-blur-md border-b border-gray-200 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-20">
+                <a href="{% url 'home' %}#home" class="text-2xl font-bold text-primary font-heading">
+                    {{ business_info.name|default:"Empresa"|truncatechars:18 }}
+                </a>
+                
+                <nav class="hidden md:flex space-x-8">
+                    <a href="{% url 'home' %}#home" class="text-gray-600 hover:text-primary transition font-medium">Início</a>
+                    <a href="{% url 'home' %}#services" class="text-gray-600 hover:text-primary transition font-medium">Serviços</a>
+                    <a href="{% url 'home' %}#team" class="text-gray-600 hover:text-primary transition font-medium">Equipa</a>
+                    <a href="{% url 'home' %}#contacts" class="text-gray-600 hover:text-primary transition font-medium">Contactos</a>
+                </nav>
+
+                <div class="flex items-center gap-4">
+                    {% if user.is_authenticated %}
+                        <a href="{% url 'dashboard' %}" class="hidden sm:block text-primary font-bold hover:text-primaryHover transition">A Minha Área</a>
+                        <form action="{% url 'logout' %}" method="post" class="inline m-0 p-0">
+                            {% csrf_token %}
+                            <button type="submit" class="border border-gray-300 hover:bg-gray-100 text-gray-700 px-5 py-2 rounded-full font-medium transition text-sm">Sair</button>
+                        </form>
+                    {% else %}
+                        <a href="{% url 'login' %}" class="hidden sm:block text-gray-600 hover:text-primary font-medium transition">Login</a>
+                        <a href="{% url 'register' %}" class="bg-primary hover:bg-primaryHover text-white px-6 py-2.5 rounded-full font-bold transition shadow-md">Registar</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </header>
+
+    {% block content %}{% endblock %}
+
+    <!-- FOOTER PT COMPLIANT MESTRE -->
+    <footer id="contacts" class="bg-gray-900 text-gray-300 pt-16 pb-8 mt-auto border-t border-gray-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
+                <!-- Coluna 1 (Contactos) -->
+                <div>
+                    <h3 class="text-xl font-bold text-white font-heading mb-6 flex items-center gap-2">
+                        <i class="fa-solid fa-store text-primary"></i> {{ business_info.name|default:"Empresa" }}
+                    </h3>
+                    <p class="text-gray-400 text-sm mb-3 flex items-start gap-3 hover:text-white transition">
+                        <i class="fa-solid fa-location-dot mt-1 text-primary"></i>
+                        <span>{{ business_info.address }}</span>
+                    </p>
+                    <p class="text-gray-400 text-sm mb-3 flex items-start gap-3 hover:text-white transition">
+                        <i class="fa-solid fa-phone mt-1 text-primary"></i>
+                        <span>{{ business_info.phone }}</span>
+                    </p>
+                    <p class="text-gray-400 text-sm flex items-start gap-3 hover:text-white transition">
+                        <i class="fa-solid fa-envelope mt-1 text-primary"></i>
+                        <span>{{ business_info.email }}</span>
+                    </p>
+                    {% if business_info.nif %}
+                    <p class="text-gray-400 text-sm flex items-start gap-3 hover:text-white transition">
+                        <i class="fa-solid fa-file-invoice mt-1 text-primary"></i>
+                        <span>NIF: {{ business_info.nif }}</span>
+                    </p>
+                    {% endif %}
+                </div>
+                
+                <!-- Coluna 2 (Horário) -->
+                <div>
+                    <h3 class="text-lg font-bold text-white font-heading mb-6">Horário</h3>
+                    <div class="text-gray-400 text-sm leading-relaxed space-y-2 opacity-90">
+                        {% if business_info.schedule %}
+                            {{ business_info.schedule|linebreaksbr }}
+                        {% else %}
+                            Horário indisponível.
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Coluna 3 (Links Legais) -->
+                <div>
+                    <h3 class="text-lg font-bold text-white font-heading mb-6">Informação Legal</h3>
+                    <ul class="space-y-3 text-sm text-gray-400">
+                        <li><a href="{% url 'privacy_policy' %}" class="hover:text-primary transition flex items-center gap-2"><i class="fa-solid fa-angle-right text-xs"></i> Política de Privacidade</a></li>
+                        <li><a href="{% url 'terms_conditions' %}" class="hover:text-primary transition flex items-center gap-2"><i class="fa-solid fa-angle-right text-xs"></i> Termos e Condições</a></li>
+                    </ul>
+                </div>
+
+                <!-- Coluna 4 (Livro de Reclamações) -->
+                <div>
+                    <h3 class="text-lg font-bold text-white font-heading mb-6">Apoio ao Cliente</h3>
+                    <a href="https://www.livroreclamacoes.pt/" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-3 border border-gray-600 rounded-lg px-4 py-3 hover:bg-gray-800 hover:border-gray-500 hover:text-white transition group w-full sm:w-auto">
+                        <i class="fas fa-book text-xl text-gray-400 group-hover:text-white transition"></i>
+                        <span class="font-medium text-sm text-left leading-tight">Livro de<br>Reclamações</span>
+                    </a>
+                </div>
+            </div>
+            
+            <!-- Linha de Fundo (RAL e Copyright) -->
+            <div class="border-t border-gray-800 pt-6 mt-8 flex flex-col md:flex-row justify-between items-center gap-4">
+                <p class="text-xs text-gray-500 text-center md:text-left max-w-2xl leading-relaxed">
+                    Em caso de litígio, o consumidor pode recorrer ao Centro de Arbitragem de Conflitos de Consumo local. 
+                    Mais informações em Portal do Consumidor (<a href="https://www.consumidor.gov.pt" target="_blank" class="underline hover:text-gray-400">www.consumidor.pt</a>).
+                </p>
+                <p class="text-xs text-gray-500 whitespace-nowrap">
+                    &copy; {% now "Y" %} {{ business_info.name|default:"Empresa" }}.
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- BANNER DE COOKIES AVANÇADO (RGPD) -->
+    <div id="cookie-banner" class="fixed bottom-0 left-0 right-0 bg-gray-900 text-white p-6 shadow-2xl z-[100] transform translate-y-full transition-transform duration-500 ease-in-out">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <p class="text-sm text-gray-300 mb-6 text-center md:text-left leading-relaxed">
+                Utilizamos cookies para melhorar a sua experiência. Os cookies necessários são essenciais para o funcionamento do site (ex: manter a sua sessão de marcações ativa). Pode escolher aceitar todos os cookies ou gerir as suas preferências.
+            </p>
+            <div class="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-4">
+                <button onclick="acceptCookies('all')" class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold transition text-sm">
+                    Aceitar Todos
+                </button>
+                <button onclick="acceptCookies('necessary')" class="w-full sm:w-auto bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-bold transition text-sm">
+                    Apenas Necessários
+                </button>
+                <button onclick="acceptCookies('rejected')" class="w-full sm:w-auto bg-transparent border border-gray-400 hover:bg-gray-800 text-gray-300 px-6 py-3 rounded-lg font-bold transition text-sm">
+                    Recusar Não-Essenciais
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPT AUTO-HIDE TOASTS & COOKIES -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Toasts
+            const toasts = document.querySelectorAll('.toast-message');
+            toasts.forEach(function(toast) {
+                setTimeout(function() {
+                    toast.style.opacity = '0';
+                    toast.style.transform = 'translateX(20px)';
+                    setTimeout(function() {
+                        toast.style.display = 'none';
+                    }, 500); // 500ms para a transição terminar
+                }, 4000); // 4000ms (4 segundos) até começar a desaparecer
+            });
+
+            // GDPR Banner
+            const cookieBanner = document.getElementById('cookie-banner');
+            
+            if (!localStorage.getItem('cookie_consent')) {
+                setTimeout(() => {
+                    cookieBanner.classList.remove('translate-y-full');
+                }, 1000);
+            }
+
+            window.acceptCookies = function(type) {
+                localStorage.setItem('cookie_consent', type);
+                cookieBanner.style.display = 'none';
+            };
+        });
+    </script>
+</body>
+</html>

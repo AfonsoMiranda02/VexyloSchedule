@@ -1,0 +1,143 @@
+{% extends 'website/base.html' %}
+
+{% block title %}Nova Marcação{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
+<div class="flex-grow bg-bgSoft py-12 px-4 sm:px-6 lg:px-8 min-h-screen">
+    <div class="max-w-2xl mx-auto space-y-8 bg-white p-10 rounded-3xl shadow-sm border border-gray-100 mt-10">
+        <div>
+            <h2 class="text-3xl font-bold text-primary font-heading text-center">Fazer Nova Marcação</h2>
+            <p class="mt-2 text-center text-gray-500">Escolha o serviço e o horário da sua conveniência.</p>
+        </div>
+        <form method="POST" class="space-y-6 mt-6">
+            {% csrf_token %}
+            
+            <div class="space-y-5">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Qual o serviço desejado?</label>
+                    {{ form.service }}
+                    {% if form.service.errors %}
+                        <p class="text-red-500 text-xs mt-1">{{ form.service.errors.0 }}</p>
+                    {% endif %}
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Tem preferência de especialista?</label>
+                    {{ form.staff_member }}
+                    <p class="text-xs text-gray-400 mt-1">Opcional. Se não escolher, alocaremos a especialista disponível.</p>
+                    {% if form.staff_member.errors %}
+                        <p class="text-red-500 text-xs mt-1">{{ form.staff_member.errors.0 }}</p>
+                    {% endif %}
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Data</label>
+                        {{ form.date }}
+                        {% if form.date.errors %}
+                            <p class="text-red-500 text-xs mt-1">{{ form.date.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Hora (ex: 14:30)</label>
+                        {{ form.time }}
+                        {% if form.time.errors %}
+                            <p class="text-red-500 text-xs mt-1">{{ form.time.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-6 border-t border-gray-100 mt-8">
+                <div class="flex items-center justify-between">
+                    <a href="{% url 'dashboard' %}" class="text-gray-500 hover:text-primary transition text-sm font-medium">Cancelar</a>
+                    <button type="submit" class="inline-flex justify-center py-3 px-8 text-sm font-bold rounded-full text-white bg-primary hover:bg-primaryHover transition shadow-md">
+                        Confirmar Marcação
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 text-center mt-4">Nota: Este site não processa pagamentos. O valor do serviço será cobrado presencialmente após a realização do mesmo.</p>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Flatpickr Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://npmcdn.com/flatpickr/dist/l10n/pt.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const timeSelect = document.getElementById("{{ form.time.id_for_label }}");
+    const staffSelect = document.getElementById("{{ form.staff_member.id_for_label }}");
+    
+    // Desabilitar o tempo inicialmente
+    if (!timeSelect.value || timeSelect.options.length <= 1) {
+        timeSelect.innerHTML = '<option value="">Selecione uma data primeiro</option>';
+        timeSelect.disabled = true;
+    }
+
+    const fp = flatpickr(".flatpickr-date", {
+        locale: "pt",
+        minDate: "today",
+        disable: [
+            function(date) {
+                // Domingo (0) ou Quarta-feira (3)
+                return (date.getDay() === 0 || date.getDay() === 3);
+            }
+        ],
+        onChange: function(selectedDates, dateStr, instance) {
+            fetchAvailableTimes(dateStr);
+        }
+    });
+
+    // Se a preferência de especialista mudar, recarrega horários
+    staffSelect.addEventListener('change', function() {
+        if (fp.selectedDates.length > 0) {
+            const dateStr = fp.formatDate(fp.selectedDates[0], "Y-m-d");
+            fetchAvailableTimes(dateStr);
+        }
+    });
+
+    function fetchAvailableTimes(dateStr) {
+        const staffId = staffSelect.value;
+        const url = `/api/available-times/?date=${dateStr}&staff_id=${staffId}`;
+        
+        timeSelect.innerHTML = '<option value="">A carregar horários...</option>';
+        timeSelect.disabled = true;
+
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                timeSelect.innerHTML = '';
+                
+                if (data.available_times.length === 0) {
+                    const opt = document.createElement('option');
+                    opt.value = "";
+                    opt.textContent = "Sem horários disponíveis";
+                    timeSelect.appendChild(opt);
+                    timeSelect.disabled = true;
+                } else {
+                    const opt = document.createElement('option');
+                    opt.value = "";
+                    opt.textContent = "Escolha a hora...";
+                    timeSelect.appendChild(opt);
+                    
+                    data.available_times.forEach(time => {
+                        const option = document.createElement('option');
+                        option.value = time;
+                        option.textContent = time;
+                        timeSelect.appendChild(option);
+                    });
+                    timeSelect.disabled = false;
+                }
+            })
+            .catch(error => {
+                console.error("Erro ao buscar horários:", error);
+                timeSelect.innerHTML = '<option value="">Erro a carregar horários</option>';
+            });
+    }
+});
+</script>
+{% endblock %}

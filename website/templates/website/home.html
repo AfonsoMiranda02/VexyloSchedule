@@ -1,0 +1,155 @@
+{% extends 'website/base.html' %}
+
+{% block content %}
+
+<!-- HERO SECTION -->
+<section id="home" class="pt-20 pb-20 md:pt-28 md:pb-28 px-4 text-center">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-4xl md:text-6xl font-bold text-primary mb-4 leading-tight">
+            {{ business_info.name|default:"Bem-vindo ao Nosso Espaço" }}
+        </h1>
+        <p class="text-lg md:text-xl text-gray-500 mb-10 max-w-2xl mx-auto">
+            Cuidamos do seu corpo e mente com serviços especializados em beleza, estética avançada e bem-estar.
+        </p>
+        
+        {% if business_info.whatsapp %}
+        <a href="https://wa.me/{{ business_info.whatsapp }}" target="_blank" 
+           class="inline-flex items-center justify-center gap-3 bg-primary hover:bg-primaryHover text-white px-8 py-4 rounded-full text-lg font-medium transition shadow-lg hover:shadow-xl transform hover:-translate-y-1">
+            <i class="fa-brands fa-whatsapp text-2xl"></i>
+            Faça a sua Marcação
+        </a>
+        {% endif %}
+    </div>
+</section>
+
+<!-- FEATURES SECTION -->
+<section id="features" class="py-16 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Feature 1 -->
+            <div class="text-center p-8 rounded-2xl border border-gray-100 bg-bgSoft hover:-translate-y-2 transition duration-300 shadow-sm hover:shadow-md">
+                <div class="w-16 h-16 mx-auto bg-primary/10 text-primary flex items-center justify-center rounded-full text-3xl mb-6">
+                    <i class="fa-solid fa-wheelchair"></i>
+                </div>
+                <h3 class="text-xl font-semibold mb-3">Acessibilidade Total</h3>
+                <p class="text-gray-500">Espaço e estacionamento preparados para receber pessoas com mobilidade reduzida.</p>
+            </div>
+            <!-- Feature 2 -->
+            <div class="text-center p-8 rounded-2xl border border-gray-100 bg-bgSoft hover:-translate-y-2 transition duration-300 shadow-sm hover:shadow-md">
+                <div class="w-16 h-16 mx-auto bg-primary/10 text-primary flex items-center justify-center rounded-full text-3xl mb-6">
+                    <i class="fa-solid fa-child-reaching"></i>
+                </div>
+                <h3 class="text-xl font-semibold mb-3">Ambiente Familiar</h3>
+                <p class="text-gray-500">Um espaço tranquilo e perfeitamente adaptado para receber crianças.</p>
+            </div>
+            <!-- Feature 3 -->
+            <div class="text-center p-8 rounded-2xl border border-gray-100 bg-bgSoft hover:-translate-y-2 transition duration-300 shadow-sm hover:shadow-md">
+                <div class="w-16 h-16 mx-auto bg-primary/10 text-primary flex items-center justify-center rounded-full text-3xl mb-6">
+                    <i class="fa-regular fa-calendar-check"></i>
+                </div>
+                <h3 class="text-xl font-semibold mb-3">Marcação Prévia</h3>
+                <p class="text-gray-500">Atendimento personalizado garantido. Aconselhamos o agendamento da sua visita.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- SERVICES SECTION -->
+<section id="services" class="py-20 bg-bgSoft">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-16">
+            <h2 class="text-3xl md:text-4xl font-bold text-primary mb-4">Os Nossos Serviços</h2>
+            <p class="text-gray-500 text-lg">Descubra os nossos tratamentos aos melhores preços</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+            {% for category in categories %}
+            <div class="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:shadow-md transition">
+                <h3 class="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3 border-b pb-4">
+                    {% if forloop.counter == 1 %}
+                        <i class="fa-solid fa-spa text-primary"></i>
+                    {% else %}
+                        <i class="fa-solid fa-wand-magic-sparkles text-primary"></i>
+                    {% endif %}
+                    {{ category.name }}
+                </h3>
+                
+                <ul class="space-y-4">
+                    {% for service in category.service_set.all %}
+                    <li class="flex justify-between items-baseline group">
+                        <div class="flex-1">
+                            <span class="text-gray-700 font-medium group-hover:text-primary transition">{{ service.name }}</span>
+                            {% if service.description %}
+                            <p class="text-sm text-gray-400 mt-1">{{ service.description }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="border-b-2 border-dotted border-gray-200 flex-1 mx-4 relative top-[-6px]"></div>
+                        <span class="font-bold text-primary bg-primary/5 px-3 py-1 rounded-lg">{{ service.price }}€</span>
+                    </li>
+                    {% endfor %}
+                    {% if not category.service_set.all %}
+                    <li class="text-gray-400 italic">Sem serviços disponíveis nesta categoria.</li>
+                    {% endif %}
+                </ul>
+            </div>
+            {% empty %}
+            <div class="col-span-1 md:col-span-2 text-center text-gray-500 py-10">
+                Ainda não existem serviços registados.
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- TEAM SECTION -->
+<section id="team" class="py-16 bg-white border-t border-gray-100">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl md:text-4xl font-bold text-primary mb-4">A Nossa Equipa</h2>
+            <p class="text-gray-500 text-lg">Profissionais dedicados ao seu bem-estar</p>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
+            {% for member in staff %}
+            <div class="text-center p-6 rounded-3xl bg-bgSoft border border-gray-100 hover:-translate-y-2 transition duration-300 shadow-sm">
+                <div class="w-24 h-24 mx-auto bg-white rounded-full flex items-center justify-center text-4xl text-primary mb-4 shadow-sm overflow-hidden">
+                    {% if member.avatar_url %}
+                        <img src="{{ member.avatar_url }}" alt="{{ member.name }}" class="w-full h-full object-cover">
+                    {% else %}
+                        <i class="fa-solid fa-user-astronaut"></i>
+                    {% endif %}
+                </div>
+                <h3 class="text-xl font-bold text-gray-800">{{ member.name }}</h3>
+                <p class="text-primary font-medium text-sm mt-1">{{ member.role }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- TESTIMONIALS SECTION -->
+<section id="testimonials" class="py-20 bg-bgSoft">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-16">
+            <h2 class="text-3xl md:text-4xl font-bold text-primary mb-4">O Que Dizem de Nós</h2>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {% for review in testimonials %}
+            <div class="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:shadow-md transition">
+                <div class="text-yellow-400 mb-4 flex gap-1 text-xl">
+                    <i class="fa-solid fa-star {% if review.rating < 1 %}text-gray-300{% endif %}"></i>
+                    <i class="fa-solid fa-star {% if review.rating < 2 %}text-gray-300{% endif %}"></i>
+                    <i class="fa-solid fa-star {% if review.rating < 3 %}text-gray-300{% endif %}"></i>
+                    <i class="fa-solid fa-star {% if review.rating < 4 %}text-gray-300{% endif %}"></i>
+                    <i class="fa-solid fa-star {% if review.rating < 5 %}text-gray-300{% endif %}"></i>
+                </div>
+                <p class="text-gray-600 italic mb-6">"{{ review.text }}"</p>
+                <div class="font-bold text-gray-900 border-t border-gray-100 pt-4">
+                    {{ review.client_name }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% endblock %}

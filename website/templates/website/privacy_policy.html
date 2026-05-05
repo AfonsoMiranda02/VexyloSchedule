@@ -1,0 +1,62 @@
+{% extends 'website/base.html' %}
+
+{% block title %}Política de Privacidade{% endblock %}
+
+{% block content %}
+<div class="flex-grow bg-bgSoft py-12 px-4 sm:px-6 lg:px-8 min-h-screen">
+    <div class="max-w-4xl mx-auto bg-white p-10 rounded-3xl shadow-sm border border-gray-100 mt-10">
+        <h1 class="text-3xl font-bold text-primary font-heading mb-6">Política de Privacidade</h1>
+        
+        <div class="prose prose-primary text-gray-700 leading-relaxed text-justify sm:text-left">
+            <p class="mb-4">
+                A sua privacidade é uma prioridade para nós. Esta Política de Privacidade descreve como o(a) 
+                <strong>{{ business_info.name|default:"nossa empresa" }}</strong> recolhe, utiliza e protege os seus dados pessoais.
+            </p>
+
+            <h2 class="text-xl font-bold text-gray-800 mt-8 mb-4 font-heading">1. Responsável pelo Tratamento de Dados</h2>
+            <p class="mb-4">
+                O responsável pelo tratamento dos seus dados pessoais é o(a) <strong>{{ business_info.name|default:"nossa empresa" }}</strong>, 
+                situado em {{ business_info.address|default:"Morada não especificada" }}. Para qualquer questão relacionada com os seus dados, 
+                poderá contactar-nos através do email: <a href="mailto:{{ business_info.email }}" class="text-primary hover:underline">{{ business_info.email|default:"email@exemplo.com" }}</a>.
+            </p>
+
+            <h2 class="text-xl font-bold text-gray-800 mt-8 mb-4 font-heading">2. Dados Recolhidos e Finalidade</h2>
+            <p class="mb-4">
+                Recolhemos dados estritamente necessários para o funcionamento dos nossos serviços, incluindo:
+            </p>
+            <ul class="list-disc pl-6 mb-4 space-y-2">
+                <li><strong>Nome, Email e Telefone:</strong> Para a gestão da sua agenda, confirmação de marcações e alertas sobre os seus agendamentos.</li>
+                <li><strong>Histórico de Marcações:</strong> Para lhe podermos oferecer um serviço contínuo e adaptado às suas necessidades estéticas.</li>
+            </ul>
+            <p class="mb-4">
+                Os seus dados são utilizados exclusivamente para a gestão da relação comercial e para o envio de comunicações 
+                diretamente relacionadas com os serviços que nos solicita. Não partilhamos os seus dados com terceiros sem o seu consentimento explícito.
+            </p>
+
+            <h2 class="text-xl font-bold text-gray-800 mt-8 mb-4 font-heading">3. Conservação dos Dados</h2>
+            <p class="mb-4">
+                Os seus dados pessoais serão guardados pelo tempo necessário para a prestação dos serviços e para o cumprimento 
+                das obrigações legais em vigor em Portugal.
+            </p>
+
+            <h2 class="text-xl font-bold text-gray-800 mt-8 mb-4 font-heading">4. Os Seus Direitos</h2>
+            <p class="mb-4">
+                Ao abrigo do Regulamento Geral sobre a Proteção de Dados (RGPD), assistem-lhe os seguintes direitos:
+            </p>
+            <ul class="list-disc pl-6 mb-4 space-y-2">
+                <li>Direito de aceder aos seus dados e pedir a sua retificação.</li>
+                <li><strong>Direito ao esquecimento (apagamento):</strong> Pode, a qualquer momento, solicitar a eliminação total dos seus dados do nosso sistema.</li>
+                <li>Direito à limitação ou oposição ao tratamento.</li>
+            </ul>
+            <p class="mb-4">
+                Para exercer qualquer um destes direitos, basta contactar-nos através dos canais oficiais (Email ou Telefone) disponibilizados 
+                no nosso site.
+            </p>
+            
+            <p class="text-sm text-gray-500 mt-12 pt-6 border-t border-gray-100">
+                Última atualização: {% now "j \d\e F \d\e Y" %}
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
