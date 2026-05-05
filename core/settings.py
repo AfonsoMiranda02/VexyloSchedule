@@ -101,9 +101,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 JAZZMIN_SETTINGS = {
     "site_title": "Gestão do Salão",
     "site_header": "Painel de Gestão",
-    "site_brand": "Teresa Pereira - Instituto de Beleza",
-    "site_logo": "logo.png",
-    "site_icon": "favicon.ico",
+    "site_brand": "O Cabeleireiro",
+    "site_logo": None,
+    "site_icon": None,
     "welcome_sign": "Bem-vindo ao seu Painel de Controlo",
     "copyright": "Agência Web",
     "show_sidebar": True,

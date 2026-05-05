@@ -2,65 +2,65 @@ from django.core.management.base import BaseCommand
 from website.models import BusinessInfo, ServiceCategory, Service, StaffMember, Testimonial
 
 class Command(BaseCommand):
-    help = 'Injeta os dados iniciais do Cabeleireiro Teresa Pereira'
+    help = 'Injeta os dados iniciais do O Cabeleireiro - Oficina Orgânica'
 
     def handle(self, *args, **kwargs):
-        self.stdout.write("A iniciar injeção de dados para Teresa Pereira...")
+        self.stdout.write("A iniciar injeção de dados para O Cabeleireiro...")
 
         # 1. Business Info
         BusinessInfo.objects.all().delete()
-        info = BusinessInfo.objects.create(
-            name="Teresa Pereira Cabeleireiro e Estética",
-            address="Praça Alto Minho Loja 109 - CC Torre Active Center, 4900-439 Viana do Castelo",
-            phone="963474965",
-            email="cabeleireirosteresapereira@hotmail.com",
-            schedule="Segunda a Sábado das 09:00 às 19:00. Domingo: Encerrado.",
-            google_maps_url="https://maps.google.com/?q=Praça+Alto+Minho+Loja+109,+Viana+do+Castelo",
-            description="Um espaço renovado e acolhedor localizado a poucos minutos do centro da Cidade de Viana do Castelo, onde a Beleza e o bem-estar acontecem."
+        BusinessInfo.objects.create(
+            name="O Cabeleireiro - Oficina Orgânica de Corte e Cor",
+            address="Tv. da Légua da Póvoa 26A, 1250-037 Lisboa",
+            phone="927704499",
+            email="geral@ocabeleireiro.pt",
+            schedule="Terça a Sexta-feira: 10:00–18:00\nSábado: 10:00–17:00\nDomingo e Segunda-feira: Encerrado",
+            google_maps_url="https://maps.google.com/?q=Tv.+da+Légua+da+Póvoa+26A,+1250-037+Lisboa",
+            description="Uma oficina orgânica de corte e cor, onde se produz ARTE e onde o NATURAL também é BELO. Utilizamos exclusivamente a marca Davines, representando a nossa filosofia orgânica, ecológica e sustentável."
         )
         self.stdout.write(self.style.SUCCESS('BusinessInfo criado com sucesso!'))
 
         # 2. Categorias
         ServiceCategory.objects.all().delete()
-        cat_cabelo = ServiceCategory.objects.create(name="Cabeleireiro", order=1)
-        cat_estetica = ServiceCategory.objects.create(name="Estética e Bem-estar", order=2)
-        cat_unhas = ServiceCategory.objects.create(name="Manicure e Pedicure", order=3)
+        cat_corte = ServiceCategory.objects.create(name="Corte e Styling", order=1)
+        cat_cor = ServiceCategory.objects.create(name="Cor e Tratamentos", order=2)
 
-        # 3. Serviços (Preço fixo 15.00€ para demo)
+        # 3. Serviços
         Service.objects.all().delete()
         servicos = [
-            # Cabeleireiro
-            ("Tratamento Capilar", cat_cabelo),
-            ("Próteses e Perucas (Alopecia/Oncologia)", cat_cabelo),
-            # Estética
-            ("Tratamentos Rosto e Corpo", cat_estetica),
-            ("Maquilhagem", cat_estetica),
-            ("Massagens", cat_estetica),
-            ("Depilação", cat_estetica),
-            # Unhas
-            ("Manicure e Pedicure", cat_unhas),
-            ("Unhas de Gel", cat_unhas),
+            ("Corte Masculino", cat_corte, 20.00),
+            ("Corte Masculino Junior (Até 20 anos)", cat_corte, 15.00),
+            ("Corte Mulher sem Brushing", cat_corte, 33.00),
+            ("Corte e Brushing Feminino", cat_corte, 43.00),
+            ("Corte Infantil", cat_corte, 12.00),
+            ("Franja", cat_corte, 8.00),
+            ("Brushing", cat_corte, 20.00),
+            ("Coloração", cat_cor, 43.00),
+            ("Madeixas", cat_cor, 65.00),
+            ("Hidratação", cat_cor, 15.00),
+            ("Reconstrução Vegana / Botox", cat_cor, 30.00),
+            ("Alisamento", cat_cor, 85.00),
         ]
         
-        for nome, categoria in servicos:
-            Service.objects.create(name=nome, category=categoria, price=15.00)
+        for nome, categoria, preco in servicos:
+            Service.objects.create(name=nome, category=categoria, price=preco)
 
         # 4. Membros da Equipa
         StaffMember.objects.all().delete()
-        StaffMember.objects.create(name="Teresa Pereira", role="Diretora e Especialista")
-        StaffMember.objects.create(name="Equipa Teresa Pereira", role="Esteticista")
+        StaffMember.objects.create(name="Mónica Dias", role="Cabeleireira")
+        StaffMember.objects.create(name="Cristiano Napolitano", role="Colorista")
         
         # 5. Testemunhos
         Testimonial.objects.all().delete()
         Testimonial.objects.create(
-            client_name="Ana Silva",
-            text='Excelente atendimento e um espaço muito acolhedor. Recomendo os tratamentos de rosto!', 
+            client_name="Sofia Ramos",
+            text="Simplesmente o melhor corte que já tive. O conceito orgânico faz toda a diferença no brilho do cabelo.", 
             rating=5
         )
         Testimonial.objects.create(
-            client_name="Ricardo Gomes",
-            text='Profissionalismo de topo. A Teresa é fantástica.', 
+            client_name="João Mendes",
+            text="Espaço incrível em Lisboa. Profissionais de mão cheia.", 
             rating=5
         )
 
-        self.stdout.write(self.style.SUCCESS('Dados da Teresa Pereira injetados com sucesso!'))
+        self.stdout.write(self.style.SUCCESS('Dados dO Cabeleireiro injetados com sucesso!'))
