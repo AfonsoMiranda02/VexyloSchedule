@@ -41,7 +41,7 @@
                     {% else %}
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">{{ field.label }}</label>
-                            <input type="{{ field.field.widget.input_type|default:'text' }}" name="{{ field.name }}" required class="appearance-none rounded-lg block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm">
+                            <input type="{{ field.field.widget.input_type|default:'text' }}" name="{{ field.name }}" value="{% if field.field.widget.input_type != 'password' %}{{ field.value|default:'' }}{% endif %}" required class="appearance-none rounded-lg block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm">
                             {% if field.errors %}
                                 <p class="text-red-500 text-xs mt-1">{{ field.errors.0 }}</p>
                             {% endif %}

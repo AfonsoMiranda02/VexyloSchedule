@@ -4,16 +4,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{{ business_info.name|default:"Agência" }}{% endblock %}</title>
+    <title>{% block title %}{{ business_info.name|default:"NexoraSchedule" }}{% endblock %}</title>
     
     <!-- SEO & Open Graph -->
-    <meta name="description" content="Bem-vindo ao {{ business_info.name }} em {{ business_info.address }}. Marque já a sua sessão de cabeleireiro e estética avançada online.">
-    <meta name="keywords" content="cabeleireiro, estética, beleza, {{ business_info.address }}, depilação a laser, salão">
+    <meta name="description" content="Bem-vindo ao {{ business_info.name|default:'NexoraSchedule' }}. Gestão simplificada de agendamentos e serviços.">
+    <meta name="keywords" content="agendamento, marcação online, gestão de serviços, {{ business_info.address|default:'NexoraSchedule' }}">
     
-    <meta property="og:title" content="{{ business_info.name|default:'Agência' }}">
-    <meta property="og:description" content="Marque já a sua sessão de cabeleireiro e estética avançada online.">
+    <meta property="og:title" content="{{ business_info.name|default:'NexoraSchedule' }}">
+    <meta property="og:description" content="Gestão simplificada de agendamentos e serviços online.">
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="{{ business_info.name|default:'Agência' }}">
+    <meta property="og:site_name" content="{{ business_info.name|default:'NexoraSchedule' }}">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -55,7 +55,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-20">
                 <a href="{% url 'home' %}#home" class="text-2xl font-bold text-primary font-heading">
-                    {{ business_info.name|default:"Empresa"|truncatechars:18 }}
+                    {{ business_info.name|default:"NexoraSchedule"|truncatechars:18 }}
                 </a>
                 
                 <nav class="hidden md:flex space-x-8">
@@ -90,7 +90,7 @@
                 <!-- Coluna 1 (Contactos) -->
                 <div>
                     <h3 class="text-xl font-bold text-white font-heading mb-6 flex items-center gap-2">
-                        <i class="fa-solid fa-store text-primary"></i> {{ business_info.name|default:"Empresa" }}
+                        <i class="fa-solid fa-store text-primary"></i> {{ business_info.name|default:"NexoraSchedule" }}
                     </h3>
                     <p class="text-gray-400 text-sm mb-3 flex items-start gap-3 hover:text-white transition">
                         <i class="fa-solid fa-location-dot mt-1 text-primary"></i>
@@ -150,7 +150,7 @@
                     Mais informações em Portal do Consumidor (<a href="https://www.consumidor.gov.pt" target="_blank" class="underline hover:text-gray-400">www.consumidor.pt</a>).
                 </p>
                 <p class="text-xs text-gray-500 whitespace-nowrap">
-                    &copy; {% now "Y" %} {{ business_info.name|default:"Empresa" }}.
+                    &copy; {% now "Y" %} {{ business_info.name|default:"NexoraSchedule" }}.
                 </p>
             </div>
         </div>

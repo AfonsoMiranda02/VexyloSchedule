@@ -22,8 +22,8 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 django.setup()
 from django.contrib.auth import get_user_model
 User = get_user_model()
-user, created = User.objects.get_or_create(username='admin', defaults={'email': 'admin@agencia.com'})
-user.set_password('admin')
+user, created = User.objects.get_or_create(username='admin', defaults={'email': 'contact@nexoraschedule.com'})
+user.set_password('admiin')
 user.is_superuser = True
 user.is_staff = True
 user.save()

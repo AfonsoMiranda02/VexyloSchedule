@@ -8,7 +8,7 @@
     <section id="home" class="hero relative h-[80vh] flex items-center justify-center text-center text-white bg-cover bg-center" style="background-image: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('https://images.unsplash.com/photo-1560066984-138dadb4c035?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80');">
         <div class="hero-content max-w-4xl px-4">
             <h1 class="text-5xl md:text-7xl font-bold font-heading mb-4">{{ business_info.name }}</h1>
-            <p class="text-xl md:text-2xl mb-8 opacity-90">{{ business_info.description|default:"Cabeleireiro e Estética de Excelência" }}</p>
+            <p class="text-xl md:text-2xl mb-8 opacity-90">{{ business_info.description|default:"Sua Solução de Agendamento Inteligente" }}</p>
             
             <div class="flex flex-col sm:flex-row gap-4 justify-center">
                 <a href="{% url 'book_appointment' %}" class="bg-primary hover:bg-primaryHover text-white px-8 py-4 rounded-full font-bold transition transform hover:scale-105 shadow-lg">
