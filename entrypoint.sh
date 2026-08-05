@@ -18,19 +18,26 @@ python manage.py migrate --noinput
 echo "=== A verificar SuperUser ==="
 python -c "
 import os, django
+from dotenv import load_dotenv
+load_dotenv()
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 django.setup()
 from django.contrib.auth import get_user_model
 User = get_user_model()
-user, created = User.objects.get_or_create(username='admin', defaults={'email': 'contact@nexoraschedule.com'})
-user.set_password('admiin')
-user.is_superuser = True
-user.is_staff = True
-user.save()
-if created:
-    print('✅ SuperUser admin criado com sucesso.')
+username = os.getenv('SUPERUSER_USERNAME', 'admin')
+password = os.getenv('SUPERUSER_PASSWORD')
+if password:
+    user, created = User.objects.get_or_create(username=username, defaults={'email': 'contact@nexoraschedule.com'})
+    user.set_password(password)
+    user.is_superuser = True
+    user.is_staff = True
+    user.save()
+    if created:
+        print('✅ SuperUser criado com sucesso com a password de SUPERUSER_PASSWORD.')
+    else:
+        print('✅ SuperUser existente atualizado com a password de SUPERUSER_PASSWORD.')
 else:
-    print('✅ SuperUser admin existente atualizado com a password correta.')
+    print('⚠️ SUPERUSER_PASSWORD não encontrada no ambiente (.env). Nenhum SuperUser foi criado ou modificado em texto limpo.')
 "
 
 echo "=== A injetar dados de teste (Seed Data) ==="

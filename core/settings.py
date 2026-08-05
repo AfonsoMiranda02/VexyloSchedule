@@ -10,12 +10,35 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY') or secrets.token_urlsafe(50)
+def get_or_create_secret_key():
+    env_key = os.getenv('SECRET_KEY')
+    if env_key:
+        return env_key
+    
+    secret_file = BASE_DIR / ".secret_key"
+    if secret_file.exists():
+        with open(secret_file, 'r', encoding='utf-8') as f:
+            key = f.read().strip()
+            if key:
+                return key
+                
+    new_key = secrets.token_urlsafe(50)
+    try:
+        with open(secret_file, 'w', encoding='utf-8') as f:
+            f.write(new_key)
+    except IOError:
+        pass
+    return new_key
+
+SECRET_KEY = get_or_create_secret_key()
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = (os.getenv('DEBUG') or 'True') == 'True'
 
 ALLOWED_HOSTS = ['*', 'localhost', '127.0.0.1', '.onrender.com']
+
+# Suporte para Reverse Proxy em serviços na nuvem (evita falhas de CSRF / Login em HTTPS)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 CSRF_TRUSTED_ORIGINS = [
     'https://*.onrender.com',

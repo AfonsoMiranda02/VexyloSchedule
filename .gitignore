@@ -2,6 +2,7 @@
 .env
 .env.*
 *.env
+.secret_key
 venv/
 env/
 .venv/
