@@ -1,4 +1,4 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from datetime import datetime, timedelta, time as dt_time
 from django.contrib.auth import login
@@ -53,6 +53,18 @@ def client_dashboard_view(request):
         'business_info': BusinessInfo.objects.first(),
     }
     return render(request, 'website/dashboard.html', context)
+
+@login_required
+def cancel_appointment_view(request, pk):
+    appointment = get_object_or_404(Appointment, id=pk, user=request.user)
+    if request.method == 'POST':
+        if appointment.status != 'Cancelada':
+            appointment.status = 'Cancelada'
+            appointment.save()
+            messages.success(request, "A sua marcação foi cancelada com sucesso.")
+        else:
+            messages.info(request, "Esta marcação já se encontra cancelada.")
+    return redirect('dashboard')
 
 def get_available_times(request):
     date_str = request.GET.get('date')

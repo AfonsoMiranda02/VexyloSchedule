@@ -69,11 +69,22 @@
                     {% endif %}
                 </div>
 
-                <!-- SMART WHATSAPP BUTTON -->
-                {% if business_info.whatsapp %}
-                <a href="https://wa.me/{{ business_info.whatsapp }}?text=Olá! Acabei de registar uma marcação para o serviço *{{ apt.service.name }}* no dia {{ apt.date|date:'d/m/Y' }} às {{ apt.time|time:'H:i' }}." target="_blank" class="block w-full text-center bg-[#25D366] hover:bg-[#1DA851] text-white py-3 rounded-2xl font-bold transition shadow-sm mt-auto">
-                    <i class="fa-brands fa-whatsapp mr-2 text-xl align-middle"></i> Enviar Mensagem
-                </a>
+                {% if apt.status != 'Cancelada' %}
+                <div class="mt-auto space-y-2.5 pt-2">
+                    <!-- SMART WHATSAPP BUTTON -->
+                    {% if business_info.whatsapp %}
+                    <a href="https://wa.me/{{ business_info.whatsapp }}?text=Olá! Acabei de registar uma marcação para o serviço *{{ apt.service.name }}* no dia {{ apt.date|date:'d/m/Y' }} às {{ apt.time|time:'H:i' }}." target="_blank" class="block w-full text-center bg-[#25D366] hover:bg-[#1DA851] text-white py-3 rounded-2xl font-bold transition shadow-sm">
+                        <i class="fa-brands fa-whatsapp mr-2 text-xl align-middle"></i> Enviar Mensagem
+                    </a>
+                    {% endif %}
+                    <!-- BOTÃO CANCELAR MARCAÇÃO -->
+                    <form method="POST" action="{% url 'cancel_appointment' apt.id %}" onsubmit="return confirm('Tem a certeza que deseja cancelar esta marcação?');">
+                        {% csrf_token %}
+                        <button type="submit" class="w-full text-center bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 py-2.5 rounded-2xl font-semibold text-sm transition shadow-sm flex items-center justify-center gap-2">
+                            <i class="fa-regular fa-circle-xmark text-base"></i> Cancelar Marcação
+                        </button>
+                    </form>
+                </div>
                 {% endif %}
             </div>
             {% empty %}

@@ -13,6 +13,7 @@ urlpatterns = [
     # Área de Cliente & Marcações
     path('dashboard/', views.client_dashboard_view, name='dashboard'),
     path('book/', views.book_appointment_view, name='book_appointment'),
+    path('cancel/<int:pk>/', views.cancel_appointment_view, name='cancel_appointment'),
     
     # API
     path('api/available-times/', views.get_available_times, name='api_available_times'),
