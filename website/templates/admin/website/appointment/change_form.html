@@ -1,10 +1,38 @@
 {% extends "admin/change_form.html" %}
 
 {% block content %}
-<div style="margin-bottom: 20px;">
-    <a href="{% url 'admin:website_appointment_changelist' %}" class="btn" style="background-color: #6b7280; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.05);" onmouseover="this.style.backgroundColor='#4b5563'" onmouseout="this.style.backgroundColor='#6b7280'">
-        <i class="fas fa-arrow-left"></i> Voltar ao Calendário
-    </a>
-</div>
 {{ block.super }}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Procurar um dos botões do painel direito (ex: História ou Gravar)
+    var historyBtn = document.querySelector('a[href*="history"]');
+    var container = null;
+    
+    if (historyBtn) {
+        container = historyBtn.parentElement;
+    } else {
+        var saveBtn = document.querySelector('input[name="_save"]');
+        if (saveBtn) container = saveBtn.parentElement;
+    }
+    
+    if (container) {
+        var backBtn = document.createElement('a');
+        backBtn.href = "{% url 'admin:website_appointment_changelist' %}";
+        // Usar as classes do Jazzmin/Bootstrap para botões de bloco
+        backBtn.className = "btn btn-block"; 
+        backBtn.innerHTML = '<i class="fas fa-arrow-left"></i> Voltar ao Calendário';
+        backBtn.style.backgroundColor = '#4b5563';
+        backBtn.style.borderColor = '#374151';
+        backBtn.style.color = 'white';
+        backBtn.style.marginTop = '10px';
+        backBtn.style.display = 'block';
+        
+        // Adicionar efeito hover simples
+        backBtn.onmouseover = function() { this.style.backgroundColor = '#374151'; };
+        backBtn.onmouseout = function() { this.style.backgroundColor = '#4b5563'; };
+        
+        container.appendChild(backBtn);
+    }
+});
+</script>
 {% endblock %}
