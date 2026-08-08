@@ -175,27 +175,29 @@
 {% endblock %}
 
 {% block content %}
-<div class="row mb-3">
-    <div class="col-12 d-flex justify-content-end">
-        <div class="view-toggles" style="margin-bottom: 0;">
-            <button id="btn-calendar" class="btn-calendar" title="Modo Calendário" onclick="setView('calendar')">
-                <i class="fas fa-calendar-alt fa-lg"></i>
-            </button>
-            <button id="btn-table" class="btn-table btn-inactive" title="Modo Tabela" onclick="setView('table')">
-                <i class="fas fa-table fa-lg"></i>
-            </button>
+<div class="appointment-custom-layout" style="display: block; width: 100%;">
+    <div class="row mb-3">
+        <div class="col-12 d-flex justify-content-end">
+            <div class="view-toggles" style="margin-bottom: 0; align-items: center;">
+                <button id="btn-calendar" class="btn-calendar" title="Modo Calendário" onclick="setView('calendar')">
+                    <i class="fas fa-calendar-alt fa-lg"></i>
+                </button>
+                <button id="btn-table" class="btn-table btn-inactive" title="Modo Tabela" onclick="setView('table')">
+                    <i class="fas fa-table fa-lg"></i>
+                </button>
+            </div>
         </div>
     </div>
-</div>
-
-<!-- Calendar View -->
-<div id="calendar-wrapper">
-    <div id="calendar-view"></div>
-</div>
-
-<!-- Table View -->
-<div id="table-wrapper" style="display: none;">
-    {{ block.super }}
+    
+    <!-- Calendar View -->
+    <div id="calendar-wrapper">
+        <div id="calendar-view"></div>
+    </div>
+    
+    <!-- Table View -->
+    <div id="table-wrapper" style="display: none;">
+        {{ block.super }}
+    </div>
 </div>
 
 <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
