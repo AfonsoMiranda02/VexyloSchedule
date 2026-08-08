@@ -2,18 +2,18 @@ from django.core.management.base import BaseCommand
 from website.models import BusinessInfo, ServiceCategory, Service, StaffMember, Testimonial
 
 class Command(BaseCommand):
-    help = 'Injeta os dados iniciais genéricos do NexoraSchedule'
+    help = 'Injeta os dados iniciais genéricos do VexyloSchedule'
 
     def handle(self, *args, **kwargs):
-        self.stdout.write("A iniciar injeção de dados genéricos para NexoraSchedule...")
+        self.stdout.write("A iniciar injeção de dados genéricos para VexyloSchedule...")
 
         # 1. Business Info
         BusinessInfo.objects.all().delete()
         BusinessInfo.objects.create(
-            name="NexoraSchedule",
+            name="VexyloSchedule",
             address="[MORADA COMPLETA]",
             phone="[TELEFONE]",
-            email="contact@nexoraschedule.com",
+            email="contact@vexyloschedule.com",
             schedule="Segunda a Sexta: 09:00 - 18:00",
             google_maps_url="",
             description="Solução completa para gestão de agendamentos e serviços online."
@@ -46,4 +46,4 @@ class Command(BaseCommand):
             rating=5
         )
 
-        self.stdout.write(self.style.SUCCESS('Dados genéricos do NexoraSchedule injetados com sucesso!'))
+        self.stdout.write(self.style.SUCCESS('Dados genéricos do VexyloSchedule injetados com sucesso!'))

@@ -128,22 +128,35 @@ LOGOUT_REDIRECT_URL = '/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 JAZZMIN_SETTINGS = {
-    "site_title": "NexoraSchedule",
-    "site_header": "NexoraSchedule",
-    "site_brand": "NexoraSchedule",
-    "welcome_sign": "Bem-vindo ao NexoraSchedule",
-    "copyright": "NexoraSchedule",
+    "site_title": "VexyloSchedule",
+    "site_header": "VexyloSchedule",
+    "site_brand": "VexyloSchedule",
+    "welcome_sign": "Bem-vindo ao VexyloSchedule",
+    "copyright": "VexyloSchedule",
     "show_sidebar": True,
     "navigation_expanded": True,
+    
+    # Menu Rápido de Topo
+    "topmenu_links": [
+        {"name": "Início",  "url": "admin:index", "permissions": ["auth.view_user"]},
+        {"name": "Ver Site", "url": "/", "new_window": True},
+        {"name": "Nova Marcação", "url": "admin:website_appointment_add", "permissions": ["website.add_appointment"], "icon": "fas fa-calendar-plus"},
+        {"name": "Novo Cliente", "url": "admin:auth_user_add", "permissions": ["auth.add_user"], "icon": "fas fa-user-plus"},
+    ],
+
+    # Esconder modelos não utilizados
+    "hide_models": ["auth.Group"],
+    "hide_apps": [],
+
     "icons": {
         "auth": "fas fa-users-cog",
-        "auth.user": "fas fa-user",
         "website.appointment": "fas fa-calendar-check",
         "website.service": "fas fa-list",
         "website.servicecategory": "fas fa-tags",
         "website.staffmember": "fas fa-user-tie",
         "website.businessinfo": "fas fa-info-circle",
         "website.testimonial": "fas fa-comment",
+        "website.userprofile": "fas fa-id-card",
     },
     "default_icon_parents": "fas fa-chevron-circle-right",
     "default_icon_children": "fas fa-circle",

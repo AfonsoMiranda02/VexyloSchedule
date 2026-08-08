@@ -27,7 +27,7 @@ User = get_user_model()
 username = os.getenv('SUPERUSER_USERNAME', 'admin')
 password = os.getenv('SUPERUSER_PASSWORD')
 if password:
-    user, created = User.objects.get_or_create(username=username, defaults={'email': 'contact@nexoraschedule.com'})
+    user, created = User.objects.get_or_create(username=username, defaults={'email': 'contact@vexyloschedule.com'})
     user.set_password(password)
     user.is_superuser = True
     user.is_staff = True

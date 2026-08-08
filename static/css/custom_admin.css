@@ -1,4 +1,4 @@
-/* Custom Admin CSS for NexoraSchedule */
+/* Custom Admin CSS for VexyloSchedule */
 
 /* Limit logo size on login page */
 .login-logo img {
@@ -27,4 +27,33 @@
 .brand-link .brand-image {
     max-height: 33px;
     width: auto;
+}
+
+/* --- VexyloSchedule Customizations --- */
+
+/* Esconder histórico de ações recente (muito técnico) */
+#recent-actions-module, .timeline {
+    display: none !important;
+}
+
+/* Tornar a sidebar mais moderna */
+.main-sidebar {
+    box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+}
+
+/* Arredondar cantos das tabelas e caixas */
+.card {
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+.card-header {
+    border-top-left-radius: 12px !important;
+    border-top-right-radius: 12px !important;
+}
+
+/* Melhorar os botões de ação rápidos (changelist) */
+.btn-sm {
+    border-radius: 6px;
+    font-weight: 500;
 }

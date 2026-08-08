@@ -1,0 +1,141 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css' rel='stylesheet' />
+<style>
+    /* Styling for the view toggle */
+    .view-toggles {
+        margin-bottom: 20px;
+        display: flex;
+        gap: 10px;
+    }
+    .view-toggles button {
+        padding: 12px 18px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-calendar {
+        background-color: #722F37; /* Primary color */
+        color: white;
+    }
+    .btn-table {
+        background-color: #4b5563; /* Gray */
+        color: white;
+    }
+    .btn-inactive {
+        opacity: 0.6;
+        background-color: #e5e7eb !important;
+        color: #374151 !important;
+    }
+    
+    #calendar-wrapper {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+        min-height: 80vh;
+    }
+    
+    /* Ensure the FullCalendar looks good */
+    .fc-event {
+        cursor: pointer;
+    }
+    
+    /* Make toolbar buttons match theme a bit */
+    .fc .fc-button-primary {
+        background-color: #722F37 !important;
+        border-color: #5A252C !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12 d-flex justify-content-end">
+        <div class="view-toggles" style="margin-bottom: 0;">
+            <button id="btn-calendar" class="btn-calendar" title="Modo Calendário" onclick="setView('calendar')">
+                <i class="fas fa-calendar-alt fa-lg"></i>
+            </button>
+            <button id="btn-table" class="btn-table btn-inactive" title="Modo Tabela" onclick="setView('table')">
+                <i class="fas fa-table fa-lg"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Calendar View -->
+<div id="calendar-wrapper">
+    <div id="calendar-view"></div>
+</div>
+
+<!-- Table View -->
+<div id="table-wrapper" style="display: none;">
+    {{ block.super }}
+</div>
+
+<script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
+<script>
+    var calendar;
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        var calendarEl = document.getElementById('calendar-view');
+        
+        calendar = new FullCalendar.Calendar(calendarEl, {
+            initialView: 'timeGridWeek', /* Shows week view initially */
+            height: '75vh',
+            expandRows: true,
+            slotMinTime: '08:00:00',
+            slotMaxTime: '20:00:00',
+            allDaySlot: false,
+            headerToolbar: {
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,timeGridDay'
+            },
+            locale: 'pt',
+            buttonText: {
+                today: 'Hoje',
+                month: 'Mês',
+                week: 'Semana',
+                day: 'Dia',
+                list: 'Lista'
+            },
+            events: {{ calendar_events|safe|default:"[]" }},
+            eventClick: function(info) {
+                if(info.event.url) {
+                    window.location.href = info.event.url;
+                    info.jsEvent.preventDefault(); // don't let the browser navigate normally
+                }
+            }
+        });
+        
+        calendar.render();
+    });
+
+    function setView(viewName) {
+        if (viewName === 'calendar') {
+            document.getElementById('table-wrapper').style.display = 'none';
+            document.getElementById('calendar-wrapper').style.display = 'block';
+            
+            document.getElementById('btn-calendar').classList.remove('btn-inactive');
+            document.getElementById('btn-table').classList.add('btn-inactive');
+            
+            if(calendar) {
+                // Little timeout to allow display block to take effect before re-rendering sizing
+                setTimeout(function(){ calendar.render(); }, 10);
+            }
+        } else {
+            document.getElementById('calendar-wrapper').style.display = 'none';
+            document.getElementById('table-wrapper').style.display = 'block';
+            
+            document.getElementById('btn-table').classList.remove('btn-inactive');
+            document.getElementById('btn-calendar').classList.add('btn-inactive');
+        }
+    }
+</script>
+{% endblock %}
