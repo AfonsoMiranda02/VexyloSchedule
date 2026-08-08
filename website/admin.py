@@ -83,6 +83,13 @@ class AppointmentAdmin(admin.ModelAdmin):
                 'url': f'/vexylo-admin/website/appointment/{appt.id}/change/',
                 'backgroundColor': color,
                 'borderColor': color,
+                'extendedProps': {
+                    'client_name': appt.user.first_name or appt.user.username,
+                    'service_name': appt.service.name,
+                    'time': appt.time.strftime('%H:%M'),
+                    'status': appt.status,
+                    'price': str(appt.service.price)
+                }
             })
             
         response.context_data['calendar_events'] = json.dumps(events, cls=DjangoJSONEncoder)

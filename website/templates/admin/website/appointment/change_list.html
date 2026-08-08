@@ -3,53 +3,173 @@
 
 {% block extrastyle %}
 {{ block.super }}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
 <link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css' rel='stylesheet' />
 <style>
     /* Styling for the view toggle */
     .view-toggles {
-        margin-bottom: 20px;
+        margin-bottom: 24px;
         display: flex;
-        gap: 10px;
+        gap: 12px;
     }
     .view-toggles button {
-        padding: 12px 18px;
+        padding: 10px 16px;
         border: none;
-        border-radius: 8px;
+        border-radius: 12px;
         cursor: pointer;
-        transition: all 0.2s;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .btn-calendar {
-        background-color: #722F37; /* Primary color */
+        background: linear-gradient(135deg, #722F37 0%, #5A252C 100%);
         color: white;
     }
     .btn-table {
-        background-color: #4b5563; /* Gray */
+        background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
         color: white;
     }
     .btn-inactive {
-        opacity: 0.6;
-        background-color: #e5e7eb !important;
-        color: #374151 !important;
+        opacity: 0.7;
+        background: #f3f4f6 !important;
+        color: #6b7280 !important;
+        box-shadow: none !important;
+    }
+    .btn-inactive:hover {
+        background: #e5e7eb !important;
+        opacity: 1;
     }
     
     #calendar-wrapper {
-        background: white;
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        background: #ffffff;
+        padding: 24px;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px -5px rgba(0,0,0,0.08);
         margin-bottom: 20px;
         min-height: 80vh;
+        border: 1px solid #f3f4f6;
     }
     
-    /* Ensure the FullCalendar looks good */
+    /* Calendar Header Typography */
+    .fc-toolbar-title {
+        font-family: 'Outfit', sans-serif !important;
+        font-weight: 700 !important;
+        color: #1f2937 !important;
+        font-size: 1.5rem !important;
+    }
+    
+    /* Make toolbar buttons match theme */
+    .fc .fc-button-primary {
+        background-color: #ffffff !important;
+        border: 1px solid #e5e7eb !important;
+        color: #374151 !important;
+        border-radius: 8px !important;
+        font-family: 'Inter', sans-serif;
+        font-weight: 500;
+        text-transform: capitalize;
+        transition: all 0.2s;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+    }
+    .fc .fc-button-primary:hover {
+        background-color: #f9fafb !important;
+        border-color: #d1d5db !important;
+    }
+    .fc .fc-button-primary:not(:disabled).fc-button-active,
+    .fc .fc-button-primary:not(:disabled):active {
+        background-color: #f3f4f6 !important;
+        border-color: #d1d5db !important;
+        color: #111827 !important;
+    }
+    .fc .fc-today-button {
+        background-color: #722F37 !important;
+        border-color: #722F37 !important;
+        color: white !important;
+    }
+    
+    /* Custom Event Styling */
     .fc-event {
         cursor: pointer;
+        border: none !important;
+        background: transparent !important;
+        padding: 2px;
     }
     
-    /* Make toolbar buttons match theme a bit */
-    .fc .fc-button-primary {
-        background-color: #722F37 !important;
-        border-color: #5A252C !important;
+    .custom-appt-card {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-radius: 10px;
+        height: 100%;
+        color: white;
+        font-family: 'Inter', sans-serif;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: transform 0.2s, box-shadow 0.2s;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .fc-event:hover .custom-appt-card {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    
+    .appt-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 4px;
+    }
+    
+    .appt-client {
+        font-family: 'Outfit', sans-serif;
+        font-weight: 600;
+        font-size: 0.9rem;
+        line-height: 1.1;
+        white-space: normal;
+        word-break: break-word;
+    }
+    
+    .appt-time {
+        font-size: 0.75rem;
+        font-weight: 600;
+        opacity: 0.9;
+        background: rgba(0,0,0,0.15);
+        padding: 2px 6px;
+        border-radius: 4px;
+        white-space: nowrap;
+    }
+    
+    .appt-body {
+        font-size: 0.8rem;
+        font-weight: 500;
+        opacity: 0.95;
+        white-space: normal;
+        line-height: 1.2;
+    }
+    
+    .appt-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: auto;
+        padding-top: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    
+    .appt-icon {
+        background: rgba(255,255,255,0.2);
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 </style>
 {% endblock %}
@@ -106,6 +226,36 @@
                 list: 'Lista'
             },
             events: {{ calendar_events|safe|default:"[]" }},
+            eventContent: function(arg) {
+                var props = arg.event.extendedProps;
+                var color = arg.event.backgroundColor;
+                
+                // Fallback para eventos sem extendedProps
+                if (!props.client_name) {
+                    return { html: '<div class="custom-appt-card" style="background-color: ' + color + ';"><div class="appt-client">' + arg.event.title + '</div></div>' };
+                }
+                
+                var icon = 'fa-clock'; // Pendente
+                if (props.status === 'Confirmada') icon = 'fa-check';
+                else if (props.status === 'Cancelada') icon = 'fa-times';
+                
+                var html = `
+                    <div class="custom-appt-card" style="background-color: ${color};">
+                        <div class="appt-header">
+                            <span class="appt-client">${props.client_name}</span>
+                            <span class="appt-time">${props.time}</span>
+                        </div>
+                        <div class="appt-body">
+                            ${props.service_name}
+                        </div>
+                        <div class="appt-footer">
+                            <span>${props.price}€</span>
+                            <div class="appt-icon"><i class="fas ${icon}"></i></div>
+                        </div>
+                    </div>
+                `;
+                return { html: html };
+            },
             eventClick: function(info) {
                 if(info.event.url) {
                     window.location.href = info.event.url;
