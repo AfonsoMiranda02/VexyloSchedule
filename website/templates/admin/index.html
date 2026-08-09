@@ -1,0 +1,117 @@
+{% extends "admin/index.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container-fluid mb-4">
+    <div class="row">
+        <!-- KPI 1 -->
+        <div class="col-lg-4 col-6">
+            <div class="small-box bg-info">
+                <div class="inner">
+                    <h3 id="kpi-clients"><i class="fas fa-spinner fa-spin"></i></h3>
+                    <p>Total de Clientes</p>
+                </div>
+                <div class="icon">
+                    <i class="fas fa-users"></i>
+                </div>
+            </div>
+        </div>
+        <!-- KPI 2 -->
+        <div class="col-lg-4 col-6">
+            <div class="small-box" style="background-color: #722F37; color: white;">
+                <div class="inner">
+                    <h3 id="kpi-appointments"><i class="fas fa-spinner fa-spin"></i></h3>
+                    <p>Marcações Hoje</p>
+                </div>
+                <div class="icon">
+                    <i class="fas fa-calendar-check"></i>
+                </div>
+            </div>
+        </div>
+        <!-- KPI 3 -->
+        <div class="col-lg-4 col-6">
+            <div class="small-box bg-success">
+                <div class="inner">
+                    <h3 id="kpi-revenue"><i class="fas fa-spinner fa-spin"></i></h3>
+                    <p>Faturação do Mês</p>
+                </div>
+                <div class="icon">
+                    <i class="fas fa-euro-sign"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-2">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header border-0">
+                    <h3 class="card-title">
+                        <i class="fas fa-chart-bar mr-1"></i>
+                        Evolução de Marcações (Últimos 7 Dias)
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <canvas id="appointmentsChart" style="min-height: 250px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        fetch('/api/admin-dashboard-stats/')
+            .then(response => response.json())
+            .then(data => {
+                // Update KPIs
+                document.getElementById('kpi-clients').innerText = data.total_clients;
+                document.getElementById('kpi-appointments').innerText = data.appointments_today;
+                document.getElementById('kpi-revenue').innerText = data.revenue_month;
+                
+                // Render Chart
+                var ctx = document.getElementById('appointmentsChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.chart_labels,
+                        datasets: [{
+                            label: 'Marcações',
+                            data: data.chart_data,
+                            backgroundColor: '#722F37',
+                            borderRadius: 4,
+                            barThickness: 30
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(error => {
+                console.error("Erro ao carregar dados do dashboard:", error);
+                document.getElementById('kpi-clients').innerText = "Erro";
+                document.getElementById('kpi-appointments').innerText = "Erro";
+                document.getElementById('kpi-revenue').innerText = "Erro";
+            });
+    });
+</script>
+
+<!-- Render the original Jazzmin apps below -->
+{{ block.super }}
+{% endblock %}

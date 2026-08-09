@@ -109,6 +109,46 @@ def get_available_times(request):
     
     return JsonResponse({'available_times': final_times})
 
+from django.contrib.admin.views.decorators import staff_member_required
+from django.db.models import Count, Sum
+from django.utils import timezone
+from django.contrib.auth import get_user_model
+
+@staff_member_required
+def admin_dashboard_api_view(request):
+    User = get_user_model()
+    today = timezone.localdate()
+    
+    # KPIs
+    total_clients = User.objects.filter(is_staff=False).count()
+    appointments_today = Appointment.objects.filter(date=today).count()
+    
+    start_of_month = today.replace(day=1)
+    # Revenue is sum of confirmed appointments price
+    revenue_agg = Appointment.objects.filter(
+        date__gte=start_of_month,
+        status='Confirmada'
+    ).aggregate(total=Sum('service__price'))
+    revenue_month = revenue_agg['total'] or 0
+    
+    # Chart Data (Last 7 days)
+    chart_labels = []
+    chart_data = []
+    
+    for i in range(6, -1, -1):
+        day = today - timedelta(days=i)
+        count = Appointment.objects.filter(date=day).count()
+        chart_labels.append(day.strftime('%d/%m'))
+        chart_data.append(count)
+        
+    return JsonResponse({
+        'total_clients': total_clients,
+        'appointments_today': appointments_today,
+        'revenue_month': f"{revenue_month}€",
+        'chart_labels': chart_labels,
+        'chart_data': chart_data
+    })
+
 def privacy_policy_view(request):
     return render(request, 'website/privacy_policy.html', {'business_info': BusinessInfo.objects.first()})
 
