@@ -40,8 +40,5 @@ else:
     print('⚠️ SUPERUSER_PASSWORD não encontrada no ambiente (.env). Nenhum SuperUser foi criado ou modificado em texto limpo.')
 "
 
-echo "=== A injetar dados de teste (Seed Data) ==="
-python manage.py seed_data
-
 echo "=== A iniciar o servidor Django ==="
 exec python manage.py runserver 0.0.0.0:${PORT:-10000}
