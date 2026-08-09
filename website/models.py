@@ -24,7 +24,10 @@ class ServiceCategory(models.Model):
     order = models.IntegerField(default=0, verbose_name="Ordem")
 
     def __str__(self): return self.name
-    class Meta: ordering = ['order', 'name']
+    class Meta: 
+        ordering = ['order', 'name']
+        verbose_name = "Categoria de Serviço"
+        verbose_name_plural = "Categorias de Serviços"
 
 class Service(models.Model):
     category = models.ForeignKey(ServiceCategory, on_delete=models.CASCADE, verbose_name="Categoria")
@@ -33,7 +36,10 @@ class Service(models.Model):
     price = models.DecimalField(max_digits=6, decimal_places=2, verbose_name="Preço")
 
     def __str__(self): return f"{self.name} - {self.price}€"
-    class Meta: ordering = ['category__order', 'name']
+    class Meta: 
+        ordering = ['category__order', 'name']
+        verbose_name = "Serviço"
+        verbose_name_plural = "Serviços"
 
 class StaffMember(models.Model):
     name = models.CharField(max_length=100, verbose_name="Nome")
@@ -51,7 +57,9 @@ class Testimonial(models.Model):
     rating = models.IntegerField(default=5, verbose_name="Classificação (1 a 5)")
 
     def __str__(self): return f"Review de {self.client_name}"
-    class Meta: verbose_name = "Testemunho"
+    class Meta: 
+        verbose_name = "Testemunho"
+        verbose_name_plural = "Testemunhos"
 
 class Appointment(models.Model):
     STATUS_CHOICES = [('Pendente', 'Pendente'), ('Confirmada', 'Confirmada'), ('Cancelada', 'Cancelada')]
@@ -65,7 +73,10 @@ class Appointment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self): return f"{self.user.username} - {self.service.name}"
-    class Meta: ordering = ['-date', '-time']
+    class Meta: 
+        ordering = ['-date', '-time']
+        verbose_name = "Marcação"
+        verbose_name_plural = "Marcações"
 
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
