@@ -18,6 +18,7 @@ urlpatterns = [
     # API
     path('api/available-times/', views.get_available_times, name='api_available_times'),
     path('api/admin-dashboard-stats/', views.admin_dashboard_api_view, name='admin_dashboard_stats'),
+    path('api/calendar-events/', views.api_calendar_events, name='api_calendar_events'),
 
     # Legal
     path('politica-de-privacidade/', views.privacy_policy_view, name='privacy_policy'),

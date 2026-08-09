@@ -240,7 +240,7 @@
                 day: 'Dia',
                 list: 'Lista'
             },
-            events: {{ calendar_events|safe|default:"[]" }},
+            events: '/api/calendar-events/',
             eventContent: function(arg) {
                 var props = arg.event.extendedProps;
                 var color = arg.event.backgroundColor;
@@ -280,6 +280,13 @@
         });
         
         calendar.render();
+        
+        // Polling para "WebSockets/Realtime"
+        setInterval(function() {
+            if (calendar) {
+                calendar.refetchEvents();
+            }
+        }, 10000); // 10 segundos
     });
 
     function setView(viewName) {
