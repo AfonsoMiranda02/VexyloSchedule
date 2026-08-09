@@ -102,4 +102,138 @@
 
     </div>
 </div>
+
+<!-- Floating Action Button -->
+<button onclick="document.getElementById('testimonialModal').classList.remove('hidden')" class="fixed bottom-8 right-8 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-2xl transition-transform hover:scale-110 z-50">
+    <i class="fa-solid fa-star"></i>
+</button>
+
+<!-- Testimonial Modal -->
+<div id="testimonialModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-[100] px-4 flex">
+    <div class="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl relative">
+        <button onclick="document.getElementById('testimonialModal').classList.add('hidden')" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+            <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+        
+        <div class="text-center mb-6">
+            <div class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4 text-yellow-500 text-2xl">
+                <i class="fa-solid fa-star"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-gray-900 font-heading">Avalie a sua experiência</h3>
+            <p class="text-gray-500 mt-2">A sua opinião é muito importante para nós!</p>
+        </div>
+        
+        <form id="testimonialForm" class="space-y-6">
+            {% csrf_token %}
+            
+            <div class="flex justify-center gap-2 text-3xl text-gray-300" id="starRating">
+                <i class="fa-solid fa-star cursor-pointer hover:text-yellow-400 transition" data-rating="1"></i>
+                <i class="fa-solid fa-star cursor-pointer hover:text-yellow-400 transition" data-rating="2"></i>
+                <i class="fa-solid fa-star cursor-pointer hover:text-yellow-400 transition" data-rating="3"></i>
+                <i class="fa-solid fa-star cursor-pointer hover:text-yellow-400 transition" data-rating="4"></i>
+                <i class="fa-solid fa-star cursor-pointer hover:text-yellow-400 transition" data-rating="5"></i>
+            </div>
+            <input type="hidden" id="ratingValue" value="5">
+            
+            <div>
+                <textarea id="testimonialText" rows="4" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition resize-none" placeholder="Conte-nos como foi a sua experiência..."></textarea>
+            </div>
+            
+            <button type="submit" id="btnSubmitTestimonial" class="w-full bg-primary hover:bg-primaryHover text-white py-3.5 rounded-2xl font-bold text-lg shadow-md transition-all flex justify-center items-center gap-2">
+                Enviar Avaliação
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const stars = document.querySelectorAll('#starRating i');
+        const ratingValue = document.getElementById('ratingValue');
+        const form = document.getElementById('testimonialForm');
+        
+        // Initial setup for 5 stars
+        updateStars(5);
+        
+        stars.forEach(star => {
+            star.addEventListener('click', function() {
+                const rating = this.getAttribute('data-rating');
+                ratingValue.value = rating;
+                updateStars(rating);
+            });
+            
+            // Hover effect
+            star.addEventListener('mouseenter', function() {
+                updateStars(this.getAttribute('data-rating'), true);
+            });
+        });
+        
+        document.getElementById('starRating').addEventListener('mouseleave', function() {
+            updateStars(ratingValue.value);
+        });
+        
+        function updateStars(rating, isHover = false) {
+            stars.forEach(s => {
+                const sRating = parseInt(s.getAttribute('data-rating'));
+                if (sRating <= rating) {
+                    s.classList.remove('text-gray-300');
+                    s.classList.add(isHover ? 'text-yellow-300' : 'text-yellow-400');
+                } else {
+                    s.classList.remove('text-yellow-400', 'text-yellow-300');
+                    s.classList.add('text-gray-300');
+                }
+            });
+        }
+        
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const text = document.getElementById('testimonialText').value.trim();
+            const rating = ratingValue.value;
+            const btn = document.getElementById('btnSubmitTestimonial');
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+            
+            if (!text) {
+                alert("Por favor, escreva o seu testemunho.");
+                return;
+            }
+            
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> A enviar...';
+            btn.disabled = true;
+            
+            fetch('/api/submit-testimonial/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ rating: rating, text: text })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('testimonialModal').innerHTML = `
+                        <div class="bg-white rounded-3xl p-10 w-full max-w-md shadow-2xl text-center">
+                            <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 text-green-500 text-4xl">
+                                <i class="fa-solid fa-check"></i>
+                            </div>
+                            <h3 class="text-2xl font-bold text-gray-900 mb-2">Obrigado!</h3>
+                            <p class="text-gray-500 mb-6">A sua avaliação foi enviada com sucesso e vai ajudar outros clientes.</p>
+                            <button onclick="window.location.reload()" class="bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 px-8 rounded-full font-bold transition">Fechar</button>
+                        </div>
+                    `;
+                } else {
+                    alert("Erro: " + data.error);
+                    btn.innerHTML = 'Enviar Avaliação';
+                    btn.disabled = false;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert("Ocorreu um erro ao enviar a avaliação.");
+                btn.innerHTML = 'Enviar Avaliação';
+                btn.disabled = false;
+            });
+        });
+    });
+</script>
 {% endblock %}

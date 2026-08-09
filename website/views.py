@@ -335,6 +335,35 @@ def api_calendar_events(request):
         
     return JsonResponse(events, safe=False)
 
+from django.views.decorators.http import require_POST
+import json
+
+@login_required
+@require_POST
+def submit_testimonial(request):
+    try:
+        data = json.loads(request.body)
+        rating = int(data.get('rating', 5))
+        text = data.get('text', '').strip()
+        
+        if not text:
+            return JsonResponse({'success': False, 'error': 'O texto do testemunho é obrigatório.'})
+            
+        if rating < 1 or rating > 5:
+            return JsonResponse({'success': False, 'error': 'A classificação deve ser entre 1 e 5.'})
+            
+        client_name = request.user.first_name or request.user.username
+        
+        Testimonial.objects.create(
+            client_name=client_name,
+            text=text,
+            rating=rating
+        )
+        
+        return JsonResponse({'success': True, 'message': 'Obrigado pelo seu testemunho!'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
 
 def privacy_policy_view(request):
     return render(request, 'website/privacy_policy.html', {'business_info': BusinessInfo.objects.first()})
