@@ -278,12 +278,21 @@ def admin_dashboard_api_view(request):
         chart_labels.append(day.strftime('%d/%m'))
         chart_data.append(count)
         
+    try:
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        db_status = 1
+    except Exception:
+        db_status = 0
+        
     return JsonResponse({
         'total_clients': total_clients,
         'appointments_today': appointments_today,
         'revenue_month': f"{revenue_month}€",
         'chart_labels': chart_labels,
-        'chart_data': chart_data
+        'chart_data': chart_data,
+        'db_status': db_status
     })
 
 @staff_member_required

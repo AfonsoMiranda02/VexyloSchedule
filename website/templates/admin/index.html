@@ -5,7 +5,7 @@
 <div class="container-fluid mb-4">
     <div class="row">
         <!-- KPI 1 -->
-        <div class="col-lg-4 col-6">
+        <div class="col-lg-3 col-6">
             <div class="small-box bg-info">
                 <div class="inner">
                     <h3 id="kpi-clients"><i class="fas fa-spinner fa-spin"></i></h3>
@@ -17,7 +17,7 @@
             </div>
         </div>
         <!-- KPI 2 -->
-        <div class="col-lg-4 col-6">
+        <div class="col-lg-3 col-6">
             <div class="small-box" style="background-color: #722F37; color: white;">
                 <div class="inner">
                     <h3 id="kpi-appointments"><i class="fas fa-spinner fa-spin"></i></h3>
@@ -29,7 +29,7 @@
             </div>
         </div>
         <!-- KPI 3 -->
-        <div class="col-lg-4 col-6">
+        <div class="col-lg-3 col-6">
             <div class="small-box bg-success">
                 <div class="inner">
                     <h3 id="kpi-revenue"><i class="fas fa-spinner fa-spin"></i></h3>
@@ -37,6 +37,18 @@
                 </div>
                 <div class="icon">
                     <i class="fas fa-euro-sign"></i>
+                </div>
+            </div>
+        </div>
+        <!-- KPI 4 -->
+        <div class="col-lg-3 col-6">
+            <div class="small-box bg-secondary" id="db-status-box">
+                <div class="inner">
+                    <h3 id="kpi-db-status"><i class="fas fa-spinner fa-spin"></i></h3>
+                    <p>Status Neon Postgres</p>
+                </div>
+                <div class="icon">
+                    <i class="fas fa-database"></i>
                 </div>
             </div>
         </div>
@@ -69,6 +81,14 @@
                 document.getElementById('kpi-clients').innerText = data.total_clients;
                 document.getElementById('kpi-appointments').innerText = data.appointments_today;
                 document.getElementById('kpi-revenue').innerText = data.revenue_month;
+                
+                // Update DB Status
+                document.getElementById('kpi-db-status').innerText = data.db_status;
+                if (data.db_status === 1) {
+                    document.getElementById('db-status-box').className = "small-box bg-success";
+                } else {
+                    document.getElementById('db-status-box').className = "small-box bg-danger";
+                }
                 
                 // Render Chart
                 var ctx = document.getElementById('appointmentsChart').getContext('2d');
@@ -108,7 +128,10 @@
                 document.getElementById('kpi-clients').innerText = "Erro";
                 document.getElementById('kpi-appointments').innerText = "Erro";
                 document.getElementById('kpi-revenue').innerText = "Erro";
+                document.getElementById('kpi-db-status').innerText = "0";
+                document.getElementById('db-status-box').className = "small-box bg-danger";
             });
+
     });
 </script>
 
