@@ -299,6 +299,7 @@ def admin_dashboard_api_view(request):
 def api_calendar_events(request):
     start_date = request.GET.get('start')
     end_date = request.GET.get('end')
+    search_query = request.GET.get('q', '').strip()
     
     # FullCalendar envia 'start' e 'end' no formato ISO8601
     appointments = Appointment.objects.all()
@@ -307,6 +308,14 @@ def api_calendar_events(request):
         appointments = appointments.filter(date__gte=start_date.split('T')[0])
     if end_date:
         appointments = appointments.filter(date__lte=end_date.split('T')[0])
+        
+    if search_query:
+        from django.db.models import Q
+        appointments = appointments.filter(
+            Q(user__first_name__icontains=search_query) |
+            Q(user__last_name__icontains=search_query) |
+            Q(user__username__icontains=search_query)
+        )
         
     events = []
     for appt in appointments:

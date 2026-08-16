@@ -190,7 +190,10 @@
 {% block content %}
 <div class="appointment-custom-layout" style="display: block; width: 100%;">
     <div class="row mb-3">
-        <div class="col-12 d-flex justify-content-end">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <div class="search-box">
+                <input type="text" id="calendar-search" style="padding: 10px; border-radius: 8px; border: 1px solid #d1d5db; font-family: 'Inter', sans-serif; width: 300px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" placeholder="Pesquisar por nome de cliente..." oninput="debounceSearch()">
+            </div>
             <div class="view-toggles" style="margin-bottom: 0; align-items: center;">
                 <button id="btn-calendar" class="btn-calendar" title="Modo Calendário" onclick="setView('calendar')">
                     <i class="fas fa-calendar-alt fa-lg"></i>
@@ -240,7 +243,15 @@
                 day: 'Dia',
                 list: 'Lista'
             },
-            events: '/api/calendar-events/',
+            events: {
+                url: '/api/calendar-events/',
+                extraParams: function() {
+                    var searchInput = document.getElementById('calendar-search');
+                    return {
+                        q: searchInput ? searchInput.value : ''
+                    };
+                }
+            },
             eventContent: function(arg) {
                 var props = arg.event.extendedProps;
                 var color = arg.event.backgroundColor;
@@ -308,6 +319,16 @@
             document.getElementById('btn-table').classList.remove('btn-inactive');
             document.getElementById('btn-calendar').classList.add('btn-inactive');
         }
+    }
+
+    var searchTimeout;
+    function debounceSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(function() {
+            if (calendar) {
+                calendar.refetchEvents();
+            }
+        }, 500);
     }
 </script>
 {% endblock %}
