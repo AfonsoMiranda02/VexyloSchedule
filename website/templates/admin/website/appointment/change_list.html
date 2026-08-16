@@ -243,14 +243,16 @@
                 day: 'Dia',
                 list: 'Lista'
             },
-            events: {
-                url: '/api/calendar-events/',
-                extraParams: function() {
-                    var searchInput = document.getElementById('calendar-search');
-                    return {
-                        q: searchInput ? searchInput.value : ''
-                    };
-                }
+            events: function(fetchInfo, successCallback, failureCallback) {
+                var searchInput = document.getElementById('calendar-search');
+                var q = searchInput ? searchInput.value : '';
+                
+                var url = '/api/calendar-events/?start=' + fetchInfo.startStr.split('T')[0] + '&end=' + fetchInfo.endStr.split('T')[0] + '&q=' + encodeURIComponent(q);
+                
+                fetch(url)
+                    .then(response => response.json())
+                    .then(data => successCallback(data))
+                    .catch(error => failureCallback(error));
             },
             eventContent: function(arg) {
                 var props = arg.event.extendedProps;
