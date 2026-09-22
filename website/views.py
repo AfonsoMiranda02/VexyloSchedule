@@ -185,9 +185,21 @@ def book_appointment_view(request):
 
 @login_required
 def client_dashboard_view(request):
+    from .models import UserProfile
+    profile, created = UserProfile.objects.get_or_create(user=request.user)
+    
+    if request.method == 'POST' and 'phone' in request.POST:
+        profile.phone = request.POST.get('phone')
+        profile.save()
+        messages.success(request, 'Número de telefone atualizado com sucesso!')
+        return redirect('dashboard')
+        
+    prompt_phone = not bool(profile.phone)
+
     context = {
         'appointments': Appointment.objects.filter(user=request.user),
         'business_info': BusinessInfo.objects.first(),
+        'prompt_phone': prompt_phone,
     }
     return render(request, 'website/dashboard.html', context)
 

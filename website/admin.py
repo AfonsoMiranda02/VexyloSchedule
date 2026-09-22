@@ -2,9 +2,24 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin
-from .models import BusinessInfo, ServiceCategory, Service, Appointment, StaffMember, Testimonial
+from .models import BusinessInfo, ServiceCategory, Service, Appointment, StaffMember, Testimonial, UserProfile
+
+class UserProfileInline(admin.StackedInline):
+    model = UserProfile
+    can_delete = False
+    verbose_name_plural = 'Perfil'
+    fk_name = 'user'
 
 class CustomUserAdmin(UserAdmin):
+    inlines = (UserProfileInline, )
+    list_display = ('username', 'email', 'first_name', 'last_name', 'get_phone', 'is_staff')
+
+    def get_phone(self, instance):
+        if hasattr(instance, 'profile'):
+            return instance.profile.phone
+        return ''
+    get_phone.short_description = 'Telefone'
+
     def get_fieldsets(self, request, obj=None):
         fieldsets = super().get_fieldsets(request, obj)
         if not request.user.is_superuser:

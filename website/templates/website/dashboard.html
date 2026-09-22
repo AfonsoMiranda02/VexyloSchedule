@@ -236,4 +236,34 @@
         });
     });
 </script>
+
+{% if prompt_phone %}
+<!-- Phone Number Prompt Modal -->
+<div id="phoneModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] px-4">
+    <div class="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl relative">
+        <div class="text-center mb-6">
+            <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-500 text-2xl">
+                <i class="fa-solid fa-phone"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-gray-900 font-heading">Complete o seu perfil</h3>
+            <p class="text-gray-500 mt-2">Por favor, insira o seu número de telefone para que possamos contactá-lo(a) em relação às suas marcações.</p>
+        </div>
+        
+        <form method="POST" class="space-y-6">
+            {% csrf_token %}
+            <div>
+                <label for="phone" class="block text-sm font-medium text-gray-700 mb-1">Número de Telefone</label>
+                <input type="tel" id="phone" name="phone" required
+                    class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition"
+                    placeholder="Ex: 912345678">
+            </div>
+            
+            <button type="submit" class="w-full bg-primary hover:bg-primaryHover text-white py-3.5 rounded-2xl font-bold text-lg shadow-md transition-all flex justify-center items-center gap-2">
+                <i class="fa-solid fa-save"></i> Guardar Telefone
+            </button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}
