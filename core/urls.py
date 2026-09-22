@@ -24,6 +24,6 @@ def health_check(request):
 urlpatterns = [
     path('health/', health_check, name='health_check'),
     path('vexylo-admin/', admin.site.urls),
-    path('accounts/', include('django.contrib.auth.urls')),
+    path('accounts/', include('allauth.urls')),
     path('', include('website.urls')),
 ]
