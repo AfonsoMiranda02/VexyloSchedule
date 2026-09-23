@@ -71,3 +71,4 @@ htmlcov/
 # AI / Agent Artifacts
 .gemini/
 .antigravity/
+.agents/
