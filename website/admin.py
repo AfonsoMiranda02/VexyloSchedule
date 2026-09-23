@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin
-from .models import BusinessInfo, ServiceCategory, Service, Appointment, StaffMember, Testimonial, UserProfile
+from .models import BusinessInfo, ServiceCategory, Service, Appointment, StaffMember, Testimonial, UserProfile, Utilizador
 
 class UserProfileInline(admin.StackedInline):
     model = UserProfile
@@ -37,7 +37,7 @@ class CustomUserAdmin(UserAdmin):
         return fieldsets
 
 admin.site.unregister(User)
-admin.site.register(User, CustomUserAdmin)
+admin.site.register(Utilizador, CustomUserAdmin)
 
 
 @admin.register(BusinessInfo)

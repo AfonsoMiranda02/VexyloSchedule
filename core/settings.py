@@ -185,7 +185,7 @@ JAZZMIN_SETTINGS = {
         {"name": "Início",  "url": "admin:index", "permissions": ["auth.view_user"]},
         {"name": "Ver Site", "url": "/", "new_window": True},
         {"name": "Nova Marcação", "url": "admin:website_appointment_add", "permissions": ["website.add_appointment"], "icon": "fas fa-calendar-plus"},
-        {"name": "Novo Cliente", "url": "admin:auth_user_add", "permissions": ["auth.add_user"], "icon": "fas fa-user-plus"},
+        {"name": "Novo Cliente", "url": "admin:website_utilizador_add", "permissions": ["auth.add_user"], "icon": "fas fa-user-plus"},
     ],
 
     # Esconder modelos não utilizados
@@ -193,7 +193,7 @@ JAZZMIN_SETTINGS = {
     "hide_apps": ["account", "socialaccount", "sites"],
 
     "icons": {
-        "auth": "fas fa-users-cog",
+        "website.utilizador": "fas fa-users-cog",
         "website.appointment": "fas fa-calendar-check",
         "website.service": "fas fa-list",
         "website.servicecategory": "fas fa-tags",

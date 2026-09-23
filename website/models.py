@@ -1,6 +1,12 @@
 from django.db import models
 from django.contrib.auth.models import User
 
+class Utilizador(User):
+    class Meta:
+        proxy = True
+        verbose_name = "Utilizador"
+        verbose_name_plural = "Utilizadores"
+
 class BusinessInfo(models.Model):
     name = models.CharField(max_length=255, verbose_name="Nome da Empresa")
     address = models.CharField(max_length=255, verbose_name="Morada")
