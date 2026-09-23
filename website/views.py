@@ -162,7 +162,7 @@ def register_view(request):
             from .models import UserProfile
             UserProfile.objects.create(user=user, phone=form.cleaned_data.get('phone'))
             
-            login(request, user)
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(request, "Conta criada com sucesso! Bem-vindo(a).")
             return redirect('dashboard')
     else:
