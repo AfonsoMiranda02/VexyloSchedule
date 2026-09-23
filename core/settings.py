@@ -190,7 +190,7 @@ JAZZMIN_SETTINGS = {
 
     # Esconder modelos não utilizados
     "hide_models": ["auth.Group"],
-    "hide_apps": [],
+    "hide_apps": ["account", "socialaccount", "sites"],
 
     "icons": {
         "auth": "fas fa-users-cog",
