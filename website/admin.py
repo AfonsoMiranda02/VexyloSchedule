@@ -61,7 +61,9 @@ class StaffMemberAdmin(admin.ModelAdmin):
 
 @admin.register(Testimonial)
 class TestimonialAdmin(admin.ModelAdmin): 
-    list_display = ('client_name', 'rating')
+    list_display = ('client_name', 'rating', 'is_visible')
+    list_editable = ('is_visible',)
+    readonly_fields = ('client_name', 'text', 'rating')
 
 @admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):

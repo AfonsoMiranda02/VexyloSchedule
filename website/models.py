@@ -55,6 +55,7 @@ class Testimonial(models.Model):
     client_name = models.CharField(max_length=100, verbose_name="Nome do Cliente")
     text = models.TextField(verbose_name="Testemunho")
     rating = models.IntegerField(default=5, verbose_name="Classificação (1 a 5)")
+    is_visible = models.BooleanField(default=True, verbose_name="Visível no Site")
 
     def __str__(self): return f"Review de {self.client_name}"
     class Meta: 

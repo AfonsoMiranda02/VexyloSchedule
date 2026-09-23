@@ -12,7 +12,7 @@ def home_view(request):
         'business_info': BusinessInfo.objects.first(),
         'categories': ServiceCategory.objects.prefetch_related('service_set').all(),
         'staff': StaffMember.objects.all(),
-        'testimonials': Testimonial.objects.all(),
+        'testimonials': Testimonial.objects.filter(is_visible=True),
     }
     return render(request, 'website/home.html', context)
 
@@ -149,7 +149,7 @@ def home_view(request):
         'business_info': BusinessInfo.objects.first(),
         'categories': ServiceCategory.objects.prefetch_related('service_set').all(),
         'staff': StaffMember.objects.all(),
-        'testimonials': Testimonial.objects.all(),
+        'testimonials': Testimonial.objects.filter(is_visible=True),
     }
     return render(request, 'website/home.html', context)
 
