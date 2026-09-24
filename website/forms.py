@@ -16,6 +16,12 @@ class UserRegisterForm(UserCreationForm):
         model = User
         fields = ['username', 'first_name', 'email']
 
+    def clean_email(self):
+        email = self.cleaned_data.get('email')
+        if User.objects.filter(email=email).exists():
+            raise forms.ValidationError("Este email já está registado. Por favor, inicie sessão ou utilize outro email.")
+        return email
+
 class AppointmentForm(forms.ModelForm):
     class Meta:
         model = Appointment
