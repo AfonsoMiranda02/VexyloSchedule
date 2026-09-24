@@ -57,3 +57,31 @@
     border-radius: 6px;
     font-weight: 500;
 }
+
+/* Corrigir botões Adicionar/Modificar no Dashboard (palavras longas em PT) */
+.content .card-body table td .btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+}
+.content .card-body table td .btn-group .btn {
+    flex: 1 1 auto;
+    border-radius: 4px !important; /* Desagrupa visualmente caso passe para a linha de baixo */
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+/* Fixar as breadcrumbs no mobile para não quebrarem o texto "Gestão de Negócio" a meio */
+@media (max-width: 768px) {
+    .breadcrumb {
+        flex-wrap: nowrap !important;
+        overflow-x: auto;
+        padding-bottom: 5px;
+    }
+    .breadcrumb-item {
+        white-space: nowrap;
+        font-size: 0.85rem;
+    }
+}
+
+
