@@ -197,11 +197,23 @@ JAZZMIN_SETTINGS = {
         {"name": "Ver Site", "url": "/", "new_window": True},
         {"name": "Nova Marcação", "url": "admin:website_appointment_add", "permissions": ["website.add_appointment"], "icon": "fas fa-calendar-plus"},
         {"name": "Novo Cliente", "url": "admin:website_utilizador_add", "permissions": ["auth.add_user"], "icon": "fas fa-user-plus"},
+        {"name": "Nova Categoria", "url": "admin:website_servicecategory_add", "permissions": ["website.add_servicecategory"], "icon": "fas fa-tags"},
     ],
 
     # Esconder modelos não utilizados
     "hide_models": ["auth.Group"],
     "hide_apps": ["account", "socialaccount", "sites"],
+    
+    # Ordem do menu lateral
+    "order_with_respect_to": [
+        "website.utilizador",
+        "website.appointment",
+        "website.businessinfo",
+        "website.servicecategory",
+        "website.service",
+        "website.staffmember",
+        "website.testimonial",
+    ],
 
     "icons": {
         "website.utilizador": "fas fa-users-cog",
