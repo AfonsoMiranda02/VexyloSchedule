@@ -423,8 +423,13 @@ def api_calendar_events(request):
                 'price': str(appt.service.price)
             }
         }
+        
         if appt.end_time:
-            event_dict['end'] = f"{appt.date.isoformat()}T{appt.end_time.isoformat()}"
+            end_time = appt.end_time
+        else:
+            end_time = (datetime.combine(appt.date, appt.time) + timedelta(minutes=appt.service.duration)).time()
+            
+        event_dict['end'] = f"{appt.date.isoformat()}T{end_time.isoformat()}"
             
         events.append(event_dict)
         
