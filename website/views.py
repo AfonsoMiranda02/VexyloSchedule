@@ -390,7 +390,23 @@ def admin_dashboard_api_view(request):
     status_qs = Appointment.objects.values('status').annotate(total=Count('id')).order_by('-total')
     status_labels = [item['status'] for item in status_qs]
     status_data = [item['total'] for item in status_qs]
-        
+    
+    # Próxima Marcação
+    from django.db.models import Q
+    next_appointment_obj = Appointment.objects.filter(
+        Q(date=today, time__gte=now_time) | Q(date__gt=today),
+        status__in=['Pendente', 'Confirmada']
+    ).order_by('date', 'time').first()
+    
+    next_appt_data = None
+    if next_appointment_obj:
+        next_appt_data = {
+            'client_name': next_appointment_obj.user.get_full_name() or next_appointment_obj.user.username,
+            'service_name': next_appointment_obj.service.name,
+            'staff_name': next_appointment_obj.staff_member.name if next_appointment_obj.staff_member else 'Qualquer profissional',
+            'date': next_appointment_obj.date.strftime('%d/%m/%Y'),
+            'time': next_appointment_obj.time.strftime('%H:%M'),
+        }
     return JsonResponse({
         'total_clients': total_clients,
         'appointments_today': appointments_today,
@@ -402,6 +418,7 @@ def admin_dashboard_api_view(request):
         'top_services_data': top_services_data,
         'status_labels': status_labels,
         'status_data': status_data,
+        'next_appointment': next_appt_data,
     })
 
 @staff_member_required

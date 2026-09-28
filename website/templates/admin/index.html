@@ -53,6 +53,23 @@
             </div>
         </div>
     </div>
+    <div class="row mt-2" id="next-appt-container" style="display: none;">
+        <div class="col-12">
+            <div class="alert shadow-sm d-flex justify-content-between align-items-center" style="border-radius: 12px; background: linear-gradient(45deg, #10b981, #3b82f6); color: white !important; border: none;">
+                <div>
+                    <h5 class="m-0"><i class="fas fa-bell mr-2"></i> Próxima Marcação: <strong id="next-appt-service"></strong></h5>
+                    <span class="d-block mt-1" style="font-size: 0.95rem;">
+                        <i class="fas fa-user mr-1"></i> <span id="next-appt-client"></span> &nbsp;&nbsp;|&nbsp;&nbsp; 
+                        <i class="fas fa-user-tie mr-1"></i> <span id="next-appt-staff"></span> &nbsp;&nbsp;|&nbsp;&nbsp; 
+                        <i class="far fa-clock mr-1"></i> <span id="next-appt-time"></span>
+                    </span>
+                </div>
+                <div>
+                    <a href="/vexylo-admin/website/appointment/" class="btn btn-sm btn-light" style="border-radius: 20px; font-weight: bold; color: #3b82f6;">Ver Todas</a>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <div class="row mt-2">
         <div class="col-lg-6 col-12">
@@ -108,6 +125,17 @@
                 document.getElementById('kpi-appointments').innerText = data.appointments_today;
                 document.getElementById('kpi-upcoming').innerText = data.upcoming_appointments;
                 document.getElementById('kpi-services').innerText = data.total_services;
+                
+                // Next Appointment
+                if (data.next_appointment) {
+                    document.getElementById('next-appt-container').style.display = 'flex';
+                    document.getElementById('next-appt-service').innerText = data.next_appointment.service_name;
+                    document.getElementById('next-appt-client').innerText = data.next_appointment.client_name;
+                    document.getElementById('next-appt-staff').innerText = data.next_appointment.staff_name;
+                    document.getElementById('next-appt-time').innerText = data.next_appointment.date + " às " + data.next_appointment.time;
+                } else {
+                    document.getElementById('next-appt-container').style.display = 'none';
+                }
                 
                 // Render Chart: Evolução
                 var ctx = document.getElementById('appointmentsChart').getContext('2d');
