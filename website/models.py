@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from datetime import time
 
 class Utilizador(User):
     class Meta:
@@ -15,8 +16,16 @@ class BusinessInfo(models.Model):
     whatsapp = models.CharField(max_length=50, blank=True, null=True, verbose_name="WhatsApp")
     nif = models.CharField(max_length=20, null=True, blank=True, verbose_name="NIF")
     schedule = models.TextField(verbose_name="Horário de Funcionamento")
+    
+    # Horários estruturados para cálculo de disponibilidade
+    opening_time = models.TimeField(default=time(9, 0), verbose_name="Hora de Abertura")
+    closing_time = models.TimeField(default=time(19, 0), verbose_name="Hora de Fecho")
+    lunch_start = models.TimeField(blank=True, null=True, verbose_name="Início Almoço")
+    lunch_end = models.TimeField(blank=True, null=True, verbose_name="Fim Almoço")
+    
     google_maps_url = models.URLField(max_length=500, blank=True, null=True, verbose_name="Link do Google Maps")
     description = models.TextField(blank=True, null=True, verbose_name="Descrição da Empresa")
+    cancel_limit_hours = models.IntegerField(default=24, verbose_name="Horas limite para cancelamento (Ex: 24 para 24h antes)")
 
     def __str__(self):
         return self.name
@@ -40,6 +49,7 @@ class Service(models.Model):
     name = models.CharField(max_length=200, verbose_name="Nome do Serviço")
     description = models.TextField(blank=True, null=True, verbose_name="Descrição")
     price = models.DecimalField(max_digits=6, decimal_places=2, verbose_name="Preço")
+    duration = models.IntegerField(default=30, verbose_name="Duração (minutos)")
 
     def __str__(self): return f"{self.name} - {self.price}€"
     class Meta: 
@@ -75,9 +85,34 @@ class Appointment(models.Model):
     service = models.ForeignKey(Service, on_delete=models.CASCADE, verbose_name="Serviço")
     staff_member = models.ForeignKey(StaffMember, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Especialista (Opcional)")
     date = models.DateField(verbose_name="Data da Marcação")
-    time = models.TimeField(verbose_name="Hora da Marcação")
+    time = models.TimeField(verbose_name="Hora da Marcação (Início)")
+    end_time = models.TimeField(blank=True, null=True, verbose_name="Hora de Fim Estimada")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pendente')
+    cancellation_reason = models.CharField(max_length=100, blank=True, null=True, verbose_name="Motivo do Cancelamento")
+    cancellation_notes = models.TextField(blank=True, null=True, verbose_name="Notas de Cancelamento")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.time and self.service and not self.end_time:
+            import datetime
+            dt = datetime.datetime.combine(datetime.date.today(), self.time)
+            dt = dt + datetime.timedelta(minutes=self.service.duration)
+            self.end_time = dt.time()
+        super().save(*args, **kwargs)
+
+    @property
+    def can_be_cancelled(self):
+        from django.utils import timezone
+        import datetime
+        business = BusinessInfo.objects.first()
+        limit_hours = business.cancel_limit_hours if business else 24
+        
+        # Obter datetime da marcação (timezone aware)
+        apt_dt = datetime.datetime.combine(self.date, self.time)
+        apt_aware = timezone.make_aware(apt_dt)
+        
+        # Limite de tempo = agora + X horas
+        return timezone.now() + datetime.timedelta(hours=limit_hours) <= apt_aware
 
     def __str__(self): return f"{self.user.username} - {self.service.name}"
     class Meta: 

@@ -92,6 +92,16 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     });
 
+    const serviceSelect = document.getElementById("{{ form.service.id_for_label }}");
+    
+    // Se o serviço mudar, recarrega horários
+    serviceSelect.addEventListener('change', function() {
+        if (fp.selectedDates.length > 0) {
+            const dateStr = fp.formatDate(fp.selectedDates[0], "Y-m-d");
+            fetchAvailableTimes(dateStr);
+        }
+    });
+
     // Se a preferência de especialista mudar, recarrega horários
     staffSelect.addEventListener('change', function() {
         if (fp.selectedDates.length > 0) {
@@ -102,7 +112,15 @@ document.addEventListener("DOMContentLoaded", function() {
 
     function fetchAvailableTimes(dateStr) {
         const staffId = staffSelect.value;
-        const url = `/api/available-times/?date=${dateStr}&staff_id=${staffId}`;
+        const serviceId = serviceSelect.value;
+        
+        if (!serviceId) {
+            timeSelect.innerHTML = '<option value="">Selecione primeiro um serviço</option>';
+            timeSelect.disabled = true;
+            return;
+        }
+        
+        const url = `/api/available-times/?date=${dateStr}&staff_id=${staffId}&service_id=${serviceId}`;
         
         timeSelect.innerHTML = '<option value="">A carregar horários...</option>';
         timeSelect.disabled = true;
@@ -124,10 +142,22 @@ document.addEventListener("DOMContentLoaded", function() {
                     opt.textContent = "Escolha a hora...";
                     timeSelect.appendChild(opt);
                     
-                    data.available_times.forEach(time => {
+                    data.available_times.forEach(slot => {
                         const option = document.createElement('option');
-                        option.value = time;
-                        option.textContent = time;
+                        option.value = slot.time;
+                        
+                        if (slot.disabled) {
+                            option.disabled = true;
+                            if (slot.reason === 'past') {
+                                option.textContent = `${slot.time} (Já passou)`;
+                            } else {
+                                option.textContent = `${slot.time} (Ocupado)`;
+                            }
+                            option.classList.add('text-gray-400'); // Fica cinzento no select
+                        } else {
+                            option.textContent = slot.time;
+                        }
+                        
                         timeSelect.appendChild(option);
                     });
                     timeSelect.disabled = false;

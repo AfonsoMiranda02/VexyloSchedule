@@ -176,6 +176,34 @@ def book_appointment_view(request):
         if form.is_valid():
             appointment = form.save(commit=False)
             appointment.user = request.user
+            
+            # Se não escolheu profissional, atribuímos o primeiro que estiver livre
+            if not appointment.staff_member:
+                from datetime import datetime, timedelta
+                service = appointment.service
+                st = appointment.time
+                et = (datetime.combine(appointment.date, st) + timedelta(minutes=service.duration)).time()
+                
+                staff_members = StaffMember.objects.all()
+                appointments = Appointment.objects.filter(date=appointment.date).exclude(status='Cancelada')
+                
+                free_staff = None
+                for staff in staff_members:
+                    staff_apts = appointments.filter(staff_member=staff)
+                    collision = False
+                    for apt in staff_apts:
+                        apt_st = apt.time
+                        apt_et = apt.end_time if apt.end_time else (datetime.combine(apt.date, apt.time) + timedelta(minutes=30)).time()
+                        if apt_st < et and apt_et > st:
+                            collision = True
+                            break
+                    if not collision:
+                        free_staff = staff
+                        break
+                        
+                if free_staff:
+                    appointment.staff_member = free_staff
+            
             appointment.save()
             messages.success(request, "Marcação confirmada! O pagamento será efetuado presencialmente no salão.")
             return redirect('dashboard')
@@ -209,6 +237,8 @@ def cancel_appointment_view(request, pk):
     if request.method == 'POST':
         if appointment.status != 'Cancelada':
             appointment.status = 'Cancelada'
+            appointment.cancellation_reason = request.POST.get('cancellation_reason', '')
+            appointment.cancellation_notes = request.POST.get('cancellation_notes', '')
             appointment.save()
             messages.success(request, "A sua marcação foi cancelada com sucesso.")
         else:
@@ -218,43 +248,94 @@ def cancel_appointment_view(request, pk):
 def get_available_times(request):
     date_str = request.GET.get('date')
     staff_id = request.GET.get('staff_id')
+    service_id = request.GET.get('service_id')
     
-    if not date_str:
+    if not date_str or not service_id:
         return JsonResponse({'available_times': []})
         
     try:
         selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-    except ValueError:
+        service = Service.objects.get(id=service_id)
+        duration = service.duration
+    except (ValueError, Service.DoesNotExist):
         return JsonResponse({'available_times': []})
         
     weekday = selected_date.weekday()
     
-    # Dom (6) está fechado
+    # Dom (6) está fechado (Isto pode depois ser parametrizado no BusinessInfo)
     if weekday == 6:
         return JsonResponse({'available_times': []})
         
-    # Segunda a Sábado: 09:00 - 19:00
-    start_time = dt_time(9, 0)
-    end_time = dt_time(19, 0)
+    business = BusinessInfo.objects.first()
+    opening_time = business.opening_time if business else dt_time(9, 0)
+    closing_time = business.closing_time if business else dt_time(19, 0)
+    lunch_start = business.lunch_start if business else None
+    lunch_end = business.lunch_end if business else None
         
-    # Gerar blocos de 30 min
+    # Gerar blocos (Granularidade 30 min)
     available_blocks = []
-    current_dt = datetime.combine(selected_date, start_time)
-    end_dt = datetime.combine(selected_date, end_time)
+    current_dt = datetime.combine(selected_date, opening_time)
+    end_dt = datetime.combine(selected_date, closing_time)
     
-    while current_dt + timedelta(minutes=30) <= end_dt:
-        available_blocks.append(current_dt.time().strftime('%H:%M'))
+    while current_dt + timedelta(minutes=duration) <= end_dt:
+        st = current_dt.time()
+        et = (current_dt + timedelta(minutes=duration)).time()
+        
+        # Omitir bloco se sobrepõe almoço
+        if lunch_start and lunch_end:
+            if st < lunch_end and et > lunch_start:
+                current_dt += timedelta(minutes=30)
+                continue
+                
+        available_blocks.append((st, et))
         current_dt += timedelta(minutes=30)
         
-    # Remover blocos ocupados
     appointments = Appointment.objects.filter(date=selected_date).exclude(status='Cancelada')
+    staff_members = StaffMember.objects.all()
     
     if staff_id:
-        appointments = appointments.filter(staff_member_id=staff_id)
+        staff_members = staff_members.filter(id=staff_id)
         
-    occupied_times = [apt.time.strftime('%H:%M') for apt in appointments]
+    final_times = []
+    now = timezone.now()
     
-    final_times = [t for t in available_blocks if t not in occupied_times]
+    for (st, et) in available_blocks:
+        st_str = st.strftime('%H:%M')
+        slot_dt = timezone.make_aware(datetime.combine(selected_date, st))
+        is_past = slot_dt < now
+        
+        is_occupied = True
+        if not is_past:
+            if staff_members.exists():
+                # Procurar pelo menos 1 profissional livre
+                for staff in staff_members:
+                    staff_apts = appointments.filter(staff_member=staff)
+                    collision = False
+                    for apt in staff_apts:
+                        apt_st = apt.time
+                        apt_et = apt.end_time if apt.end_time else (datetime.combine(selected_date, apt.time) + timedelta(minutes=30)).time()
+                        if apt_st < et and apt_et > st:
+                            collision = True
+                            break
+                    if not collision:
+                        is_occupied = False
+                        break
+            else:
+                # Fallback se não existirem profissionais
+                collision = False
+                for apt in appointments:
+                    apt_st = apt.time
+                    apt_et = apt.end_time if apt.end_time else (datetime.combine(selected_date, apt.time) + timedelta(minutes=30)).time()
+                    if apt_st < et and apt_et > st:
+                        collision = True
+                        break
+                is_occupied = collision
+                
+        final_times.append({
+            'time': st_str,
+            'disabled': is_past or is_occupied,
+            'reason': 'past' if is_past else ('occupied' if is_occupied else '')
+        })
     
     return JsonResponse({'available_times': final_times})
 
