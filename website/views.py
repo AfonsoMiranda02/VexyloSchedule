@@ -408,7 +408,7 @@ def api_calendar_events(request):
             color = '#ef4444'
             
         dt_str = f"{appt.date.isoformat()}T{appt.time.isoformat()}"
-        events.append({
+        event_dict = {
             'id': appt.id,
             'title': f'{appt.service.name} - {appt.user.first_name or appt.user.username}',
             'start': dt_str,
@@ -422,7 +422,11 @@ def api_calendar_events(request):
                 'status': appt.status,
                 'price': str(appt.service.price)
             }
-        })
+        }
+        if appt.end_time:
+            event_dict['end'] = f"{appt.date.isoformat()}T{appt.end_time.isoformat()}"
+            
+        events.append(event_dict)
         
     return JsonResponse(events, safe=False)
 
