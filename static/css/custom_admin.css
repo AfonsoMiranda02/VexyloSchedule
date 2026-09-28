@@ -106,3 +106,12 @@ body.dark-mode .main-header {
     background-color: #343a40 !important;
     border-bottom: 1px solid #454d55 !important;
 }
+
+body.dark-mode .main-header .nav-link,
+body.dark-mode .main-header .navbar-nav .nav-link {
+    color: #e2e8f0 !important;
+}
+body.dark-mode .main-header .navbar-nav .nav-link:hover {
+    color: #ffffff !important;
+    opacity: 0.9;
+}
