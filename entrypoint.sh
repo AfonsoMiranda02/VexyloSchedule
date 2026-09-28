@@ -10,6 +10,9 @@ python manage.py migrate --noinput
 echo "A compilar os ficheiros estáticos (Whitenoise)..."
 python manage.py collectstatic --noinput
 
+echo "A injetar dados base (caso a BD esteja limpa)..."
+python manage.py seed_data
+
 echo "A iniciar o Gunicorn..."
 # O binding para a variável de ambiente $PORT é essencial no Render
 exec gunicorn core.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 3

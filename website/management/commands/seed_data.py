@@ -1,49 +1,47 @@
 from django.core.management.base import BaseCommand
+from django.contrib.auth.models import User
 from website.models import BusinessInfo, ServiceCategory, Service, StaffMember, Testimonial
 
 class Command(BaseCommand):
-    help = 'Injeta os dados iniciais genéricos do VexyloSchedule'
+    help = 'Injeta os dados iniciais caso a base de dados esteja completamente vazia'
 
     def handle(self, *args, **kwargs):
-        self.stdout.write("A iniciar injeção de dados genéricos para VexyloSchedule...")
+        # 1. Verifica se a BD já tem dados (se já tem superuser, não fazemos nada)
+        if User.objects.filter(is_superuser=True).exists():
+            self.stdout.write(self.style.WARNING('A base de dados já contém um superuser. O seeder foi ignorado para não sobrepor dados.'))
+            return
 
-        # 1. Business Info
-        BusinessInfo.objects.all().delete()
-        BusinessInfo.objects.create(
-            name="VexyloSchedule",
-            address="[MORADA COMPLETA]",
-            phone="[TELEFONE]",
-            email="contact@vexyloschedule.com",
-            schedule="Segunda a Sexta: 09:00 - 18:00",
-            google_maps_url="",
-            description="Solução completa para gestão de agendamentos e serviços online."
-        )
-        self.stdout.write(self.style.SUCCESS('BusinessInfo criado com sucesso!'))
+        self.stdout.write("A iniciar injeção de dados iniciais automatizados...")
 
-        # 2. Categorias
-        ServiceCategory.objects.all().delete()
-        cat_principal = ServiceCategory.objects.create(name="Serviços Gerais", order=1)
+        # 2. Criar Superuser
+        if not User.objects.filter(username='admin').exists():
+            User.objects.create_superuser('admin', 'admin@vexyloschedule.com', 'admin')
+            self.stdout.write(self.style.SUCCESS('Superuser "admin" criado com sucesso (password: admin)!'))
 
-        # 3. Serviços
-        Service.objects.all().delete()
-        servicos = [
-            ("Serviço Base 1", cat_principal, 10.00),
-            ("Serviço Base 2", cat_principal, 20.00),
-        ]
-        
-        for nome, categoria, preco in servicos:
-            Service.objects.create(name=nome, category=categoria, price=preco)
+        # 3. Business Info
+        if not BusinessInfo.objects.exists():
+            BusinessInfo.objects.create(
+                name="Barbearia Default",
+                address="Rua Principal, 123",
+                phone="912345678",
+                whatsapp="912345678",
+                email="contact@barbearia.com",
+                schedule="Segunda a Sábado: 09:00 - 19:00",
+                description="A tua nova solução de marcações online."
+            )
+            self.stdout.write(self.style.SUCCESS('BusinessInfo default criado!'))
 
-        # 4. Membros da Equipa
-        StaffMember.objects.all().delete()
-        StaffMember.objects.create(name="Membro Equipa 1", role="Profissional")
-        
-        # 5. Testemunhos
-        Testimonial.objects.all().delete()
-        Testimonial.objects.create(
-            client_name="Cliente Exemplo",
-            text="Excelente serviço e facilidade de agendamento.", 
-            rating=5
-        )
+        # 4. Categorias e Serviços
+        if not ServiceCategory.objects.exists():
+            cat = ServiceCategory.objects.create(name="Cortes de Cabelo", order=1)
+            Service.objects.create(name="Corte de Cabelo (Homem)", category=cat, price=15.00, duration=30)
+            Service.objects.create(name="Corte de Barba", category=cat, price=10.00, duration=30)
+            Service.objects.create(name="Cabelo + Barba", category=cat, price=20.00, duration=60)
+            self.stdout.write(self.style.SUCCESS('Serviços default criados!'))
 
-        self.stdout.write(self.style.SUCCESS('Dados genéricos do VexyloSchedule injetados com sucesso!'))
+        # 5. Membros da Equipa
+        if not StaffMember.objects.exists():
+            StaffMember.objects.create(name="João (Barbeiro)", role="Barbeiro Principal")
+            self.stdout.write(self.style.SUCCESS('Staff default criado!'))
+
+        self.stdout.write(self.style.SUCCESS('✨ Instalação concluída! O sistema está pronto a ser entregue ao cliente.'))
