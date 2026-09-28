@@ -84,7 +84,13 @@ class Testimonial(models.Model):
         verbose_name_plural = "Testemunhos"
 
 class Appointment(models.Model):
-    STATUS_CHOICES = [('Pendente', 'Pendente'), ('Confirmada', 'Confirmada'), ('Cancelada', 'Cancelada')]
+    STATUS_CHOICES = [
+        ('Pendente', 'Pendente'),
+        ('Confirmada', 'Confirmada'),
+        ('Concluída', 'Concluída'),
+        ('Faltou', 'Faltou (No-Show)'),
+        ('Cancelada', 'Cancelada')
+    ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Cliente")
     service = models.ForeignKey(Service, on_delete=models.CASCADE, verbose_name="Serviço")

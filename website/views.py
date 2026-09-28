@@ -347,6 +347,19 @@ from django.contrib.auth import get_user_model
 def admin_dashboard_api_view(request):
     User = get_user_model()
     today = timezone.localdate()
+    now_time = timezone.localtime().time()
+    
+    # [Auto-Close] Fecho automático de marcações antigas (Otimizado)
+    Appointment.objects.filter(
+        status__in=['Pendente', 'Confirmada'], 
+        date__lt=today
+    ).update(status='Concluída')
+    
+    Appointment.objects.filter(
+        status__in=['Pendente', 'Confirmada'],
+        date=today,
+        end_time__lt=now_time
+    ).update(status='Concluída')
     
     # KPIs
     total_clients = User.objects.filter(is_staff=False).count()
@@ -404,8 +417,12 @@ def api_calendar_events(request):
         color = '#f59e0b'
         if appt.status == 'Confirmada':
             color = '#10b981'
+        elif appt.status == 'Concluída':
+            color = '#3b82f6' # Blue
         elif appt.status == 'Cancelada':
-            color = '#ef4444'
+            color = '#ef4444' # Red
+        elif appt.status == 'Faltou':
+            color = '#6b7280' # Grey
             
         dt_str = f"{appt.date.isoformat()}T{appt.time.isoformat()}"
         event_dict = {

@@ -267,6 +267,8 @@
                 var icon = 'fa-clock'; // Pendente
                 if (props.status === 'Confirmada') icon = 'fa-check';
                 else if (props.status === 'Cancelada') icon = 'fa-times';
+                else if (props.status === 'Concluída') icon = 'fa-check-double';
+                else if (props.status === 'Faltou') icon = 'fa-user-slash';
                 
                 var html = `
                     <div class="custom-appt-card" style="background-color: ${color};">
