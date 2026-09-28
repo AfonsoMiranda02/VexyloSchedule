@@ -230,11 +230,10 @@ JAZZMIN_SETTINGS = {
     "default_icon_children": "fas fa-circle",
     "related_modal_active": False,
     "custom_css": "css/custom_admin.css",
-    "custom_js": None,
+    "custom_js": "js/custom_admin.js",
     "show_ui_builder": False,
 }
 
 JAZZMIN_UI_TWEAKS = {
     "theme": "litera",
-    "dark_mode_theme": "darkly",
 }
