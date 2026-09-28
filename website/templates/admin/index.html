@@ -30,25 +30,25 @@
         </div>
         <!-- KPI 3 -->
         <div class="col-lg-3 col-6">
-            <div class="small-box bg-success">
+            <div class="small-box bg-warning">
                 <div class="inner">
-                    <h3 id="kpi-revenue"><i class="fas fa-spinner fa-spin"></i></h3>
-                    <p>Faturação do Mês</p>
+                    <h3 id="kpi-upcoming"><i class="fas fa-spinner fa-spin"></i></h3>
+                    <p>Marcações Futuras</p>
                 </div>
                 <div class="icon">
-                    <i class="fas fa-euro-sign"></i>
+                    <i class="fas fa-clock"></i>
                 </div>
             </div>
         </div>
         <!-- KPI 4 -->
         <div class="col-lg-3 col-6">
-            <div class="small-box bg-secondary" id="db-status-box">
+            <div class="small-box bg-success">
                 <div class="inner">
-                    <h3 id="kpi-db-status"><i class="fas fa-spinner fa-spin"></i></h3>
-                    <p>Status Neon Postgres</p>
+                    <h3 id="kpi-services"><i class="fas fa-spinner fa-spin"></i></h3>
+                    <p>Serviços Ativos</p>
                 </div>
                 <div class="icon">
-                    <i class="fas fa-database"></i>
+                    <i class="fas fa-cut"></i>
                 </div>
             </div>
         </div>
@@ -80,15 +80,8 @@
                 // Update KPIs
                 document.getElementById('kpi-clients').innerText = data.total_clients;
                 document.getElementById('kpi-appointments').innerText = data.appointments_today;
-                document.getElementById('kpi-revenue').innerText = data.revenue_month;
-                
-                // Update DB Status
-                document.getElementById('kpi-db-status').innerText = data.db_status;
-                if (data.db_status === 1) {
-                    document.getElementById('db-status-box').className = "small-box bg-success";
-                } else {
-                    document.getElementById('db-status-box').className = "small-box bg-danger";
-                }
+                document.getElementById('kpi-upcoming').innerText = data.upcoming_appointments;
+                document.getElementById('kpi-services').innerText = data.total_services;
                 
                 // Render Chart
                 var ctx = document.getElementById('appointmentsChart').getContext('2d');
