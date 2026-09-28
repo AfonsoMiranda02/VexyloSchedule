@@ -237,8 +237,8 @@ JAZZMIN_UI_TWEAKS = {
     "theme": "litera",
 }
 
-# Segurança em Produção (só aplica se não for DEBUG local)
-if not DEBUG:
+# Segurança em Produção (só aplica no Render)
+if os.getenv('RENDER'):
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
