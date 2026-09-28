@@ -85,6 +85,7 @@ SOCIALACCOUNT_PROVIDERS = {
         ],
         'AUTH_PARAMS': {
             'access_type': 'online',
+            'prompt': 'select_account',
         },
         'APP': {
             'client_id': os.environ.get('GOOGLE_CLIENT_ID'),
