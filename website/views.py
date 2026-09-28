@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, time as dt_time
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from .models import BusinessInfo, ServiceCategory, Appointment, StaffMember, Testimonial
+from .models import BusinessInfo, ServiceCategory, Service, Appointment, StaffMember, Testimonial
 from .forms import UserRegisterForm, AppointmentForm
 
 def home_view(request):
