@@ -31,6 +31,7 @@ class BusinessInfo(models.Model):
         return self.name
 
     class Meta:
+        db_table = 'business_info'
         verbose_name = "Informação do Negócio"
         verbose_name_plural = "Informação do Negócio"
 
@@ -39,7 +40,8 @@ class ServiceCategory(models.Model):
     order = models.IntegerField(default=0, verbose_name="Ordem")
 
     def __str__(self): return self.name
-    class Meta: 
+    class Meta:
+        db_table = 'service_categories'
         ordering = ['order', 'name']
         verbose_name = "Categoria de Serviço"
         verbose_name_plural = "Categorias de Serviços"
@@ -52,7 +54,8 @@ class Service(models.Model):
     duration = models.IntegerField(default=30, verbose_name="Duração (minutos)")
 
     def __str__(self): return f"{self.name} - {self.price}€"
-    class Meta: 
+    class Meta:
+        db_table = 'services'
         ordering = ['category__order', 'name']
         verbose_name = "Serviço"
         verbose_name_plural = "Serviços"
@@ -64,6 +67,7 @@ class StaffMember(models.Model):
 
     def __str__(self): return f"{self.name} - {self.role}"
     class Meta:
+        db_table = 'staff_members'
         verbose_name = "Membro da Equipa"
         verbose_name_plural = "Equipa"
 
@@ -74,7 +78,8 @@ class Testimonial(models.Model):
     is_visible = models.BooleanField(default=True, verbose_name="Visível no Site")
 
     def __str__(self): return f"Review de {self.client_name}"
-    class Meta: 
+    class Meta:
+        db_table = 'testimonials'
         verbose_name = "Testemunho"
         verbose_name_plural = "Testemunhos"
 
@@ -115,7 +120,8 @@ class Appointment(models.Model):
         return timezone.now() + datetime.timedelta(hours=limit_hours) <= apt_aware
 
     def __str__(self): return f"{self.user.username} - {self.service.name}"
-    class Meta: 
+    class Meta:
+        db_table = 'appointments'
         ordering = ['-date', '-time']
         verbose_name = "Marcação"
         verbose_name_plural = "Marcações"
@@ -125,4 +131,6 @@ class UserProfile(models.Model):
     phone = models.CharField(max_length=20, verbose_name="Telefone")
 
     def __str__(self): return self.user.username
-    class Meta: verbose_name = "Perfil de Utilizador"
+    class Meta:
+        db_table = 'user_profiles'
+        verbose_name = "Perfil de Utilizador"
