@@ -6,9 +6,8 @@ class Command(BaseCommand):
     help = 'Fecha automaticamente marcações antigas (Pendente/Confirmada) como Concluída.'
 
     def handle(self, *args, **kwargs):
-        agora = timezone.now()
-        hoje = agora.date()
-        hora_atual = agora.time()
+        hoje = timezone.localdate()
+        hora_atual = timezone.localtime().time()
 
         # Filtra marcações que precisam de ser fechadas
         # Data anterior a hoje
