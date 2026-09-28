@@ -55,16 +55,42 @@
     </div>
     
     <div class="row mt-2">
-        <div class="col-12">
+        <div class="col-lg-6 col-12">
             <div class="card">
                 <div class="card-header border-0">
                     <h3 class="card-title">
                         <i class="fas fa-chart-bar mr-1"></i>
-                        Evolução de Marcações (Últimos 7 Dias)
+                        Evolução (Últimos 7 Dias)
                     </h3>
                 </div>
                 <div class="card-body">
-                    <canvas id="appointmentsChart" style="min-height: 250px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                    <canvas id="appointmentsChart" style="min-height: 250px; height: 250px; max-height: 250px; max-width: 100%;"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-6">
+            <div class="card">
+                <div class="card-header border-0">
+                    <h3 class="card-title">
+                        <i class="fas fa-fire mr-1"></i>
+                        Top Serviços
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <canvas id="topServicesChart" style="min-height: 250px; height: 250px; max-height: 250px; max-width: 100%;"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-6">
+            <div class="card">
+                <div class="card-header border-0">
+                    <h3 class="card-title">
+                        <i class="fas fa-chart-pie mr-1"></i>
+                        Status (Geral)
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <canvas id="statusChart" style="min-height: 250px; height: 250px; max-height: 250px; max-width: 100%;"></canvas>
                 </div>
             </div>
         </div>
@@ -83,7 +109,7 @@
                 document.getElementById('kpi-upcoming').innerText = data.upcoming_appointments;
                 document.getElementById('kpi-services').innerText = data.total_services;
                 
-                // Render Chart
+                // Render Chart: Evolução
                 var ctx = document.getElementById('appointmentsChart').getContext('2d');
                 new Chart(ctx, {
                     type: 'bar',
@@ -94,7 +120,7 @@
                             data: data.chart_data,
                             backgroundColor: '#722F37',
                             borderRadius: 4,
-                            barThickness: 30
+                            barThickness: 20
                         }]
                     },
                     options: {
@@ -121,14 +147,72 @@
                         }
                     }
                 });
+
+                // Render Chart: Top Services
+                var ctxTop = document.getElementById('topServicesChart').getContext('2d');
+                new Chart(ctxTop, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.top_services_labels,
+                        datasets: [{
+                            data: data.top_services_data,
+                            backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { color: 'rgba(128, 128, 128, 0.9)' }
+                            }
+                        },
+                        cutout: '70%'
+                    }
+                });
+
+                // Render Chart: Status
+                var ctxStatus = document.getElementById('statusChart').getContext('2d');
+                
+                // Mapear cores para os status
+                var statusColors = data.status_labels.map(status => {
+                    if (status === 'Confirmada') return '#10b981';
+                    if (status === 'Pendente') return '#f59e0b';
+                    if (status === 'Concluída') return '#3b82f6';
+                    if (status === 'Cancelada') return '#ef4444';
+                    if (status === 'Faltou') return '#6b7280';
+                    return '#9ca3af';
+                });
+
+                new Chart(ctxStatus, {
+                    type: 'pie',
+                    data: {
+                        labels: data.status_labels,
+                        datasets: [{
+                            data: data.status_data,
+                            backgroundColor: statusColors,
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { color: 'rgba(128, 128, 128, 0.9)' }
+                            }
+                        }
+                    }
+                });
+
             })
             .catch(error => {
                 console.error("Erro ao carregar dados do dashboard:", error);
                 document.getElementById('kpi-clients').innerText = "Erro";
                 document.getElementById('kpi-appointments').innerText = "Erro";
-                document.getElementById('kpi-revenue').innerText = "Erro";
-                document.getElementById('kpi-db-status').innerText = "0";
-                document.getElementById('db-status-box').className = "small-box bg-danger";
             });
 
     });

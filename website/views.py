@@ -381,6 +381,16 @@ def admin_dashboard_api_view(request):
         chart_labels.append(day.strftime('%d/%m'))
         chart_data.append(count)
         
+    # Top Services (Doughnut Chart)
+    top_services_qs = Appointment.objects.values('service__name').annotate(total=Count('id')).order_by('-total')[:5]
+    top_services_labels = [item['service__name'] for item in top_services_qs]
+    top_services_data = [item['total'] for item in top_services_qs]
+    
+    # Status Distribution (Pie/Polar Chart)
+    status_qs = Appointment.objects.values('status').annotate(total=Count('id')).order_by('-total')
+    status_labels = [item['status'] for item in status_qs]
+    status_data = [item['total'] for item in status_qs]
+        
     return JsonResponse({
         'total_clients': total_clients,
         'appointments_today': appointments_today,
@@ -388,6 +398,10 @@ def admin_dashboard_api_view(request):
         'total_services': total_services,
         'chart_labels': chart_labels,
         'chart_data': chart_data,
+        'top_services_labels': top_services_labels,
+        'top_services_data': top_services_data,
+        'status_labels': status_labels,
+        'status_data': status_data,
     })
 
 @staff_member_required
