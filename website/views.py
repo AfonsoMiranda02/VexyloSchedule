@@ -146,7 +146,6 @@ from .forms import UserRegisterForm, AppointmentForm
 
 def home_view(request):
     context = {
-        'business_info': BusinessInfo.objects.first(),
         'categories': ServiceCategory.objects.prefetch_related('service_set').all(),
         'staff': StaffMember.objects.all(),
         'testimonials': Testimonial.objects.filter(is_visible=True),
