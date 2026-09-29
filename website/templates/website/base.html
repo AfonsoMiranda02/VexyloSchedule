@@ -164,21 +164,15 @@
         </div>
     </footer>
 
-    <!-- BANNER DE COOKIES AVANÇADO (RGPD) -->
-    <div id="cookie-banner" class="fixed bottom-0 left-0 right-0 bg-gray-900 text-white p-6 shadow-2xl z-[100] transform translate-y-full transition-transform duration-500 ease-in-out">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <p class="text-sm text-gray-300 mb-6 text-center md:text-left leading-relaxed">
-                Utilizamos cookies para melhorar a sua experiência. Os cookies necessários são essenciais para o funcionamento do site (ex: manter a sua sessão de marcações ativa). Pode escolher aceitar todos os cookies ou gerir as suas preferências.
+    <!-- AVISO DE COOKIES ESTATUTÁRIO (TRANSPARÊNCIA TÉCNICA) -->
+    <div id="cookie-banner" class="fixed bottom-0 left-0 right-0 bg-gray-900 text-white p-5 shadow-2xl z-[100] transform translate-y-full transition-transform duration-500 ease-in-out border-t border-gray-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p class="text-sm text-gray-300 text-center sm:text-left leading-relaxed">
+                Utilizamos exclusivamente cookies técnicos estritamente necessários para autenticação segura e gestão de marcações. Não usamos cookies de publicidade nem partilhamos dados com redes de rastreio.
             </p>
-            <div class="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-4">
-                <button onclick="acceptCookies('all')" class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold transition text-sm">
-                    Aceitar Todos
-                </button>
-                <button onclick="acceptCookies('necessary')" class="w-full sm:w-auto bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-bold transition text-sm">
-                    Apenas Necessários
-                </button>
-                <button onclick="acceptCookies('rejected')" class="w-full sm:w-auto bg-transparent border border-gray-400 hover:bg-gray-800 text-gray-300 px-6 py-3 rounded-lg font-bold transition text-sm">
-                    Recusar Não-Essenciais
+            <div class="flex-shrink-0">
+                <button onclick="acceptCookies('essential')" class="bg-primary hover:bg-primaryHover text-white px-6 py-2.5 rounded-full font-bold transition text-sm shadow-md">
+                    Compreendido
                 </button>
             </div>
         </div>

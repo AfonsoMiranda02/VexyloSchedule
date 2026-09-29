@@ -256,36 +256,67 @@
                     .catch(error => failureCallback(error));
             },
             eventContent: function(arg) {
-                var props = arg.event.extendedProps;
-                var color = arg.event.backgroundColor;
+                var props = arg.event.extendedProps || {};
+                var color = arg.event.backgroundColor || '#722F37';
                 
-                // Fallback para eventos sem extendedProps
+                var card = document.createElement('div');
+                card.className = 'custom-appt-card';
+                card.style.backgroundColor = color;
+                
                 if (!props.client_name) {
-                    return { html: '<div class="custom-appt-card" style="background-color: ' + color + ';"><div class="appt-client">' + arg.event.title + '</div></div>' };
+                    var fallbackClient = document.createElement('div');
+                    fallbackClient.className = 'appt-client';
+                    fallbackClient.textContent = arg.event.title || '';
+                    card.appendChild(fallbackClient);
+                    return { domNodes: [card] };
                 }
                 
-                var icon = 'fa-clock'; // Pendente
-                if (props.status === 'Confirmada') icon = 'fa-check';
-                else if (props.status === 'Cancelada') icon = 'fa-times';
-                else if (props.status === 'Concluída') icon = 'fa-check-double';
-                else if (props.status === 'Faltou') icon = 'fa-user-slash';
+                var iconClass = 'fa-clock'; // Pendente
+                if (props.status === 'Confirmada') iconClass = 'fa-check';
+                else if (props.status === 'Cancelada') iconClass = 'fa-times';
+                else if (props.status === 'Concluída') iconClass = 'fa-check-double';
+                else if (props.status === 'Faltou') iconClass = 'fa-user-slash';
                 
-                var html = `
-                    <div class="custom-appt-card" style="background-color: ${color};">
-                        <div class="appt-header">
-                            <span class="appt-client">${props.client_name}</span>
-                            <span class="appt-time">${props.time}</span>
-                        </div>
-                        <div class="appt-body">
-                            ${props.service_name}
-                        </div>
-                        <div class="appt-footer">
-                            <span>${props.price}€</span>
-                            <div class="appt-icon"><i class="fas ${icon}"></i></div>
-                        </div>
-                    </div>
-                `;
-                return { html: html };
+                // Header
+                var header = document.createElement('div');
+                header.className = 'appt-header';
+                
+                var clientSpan = document.createElement('span');
+                clientSpan.className = 'appt-client';
+                clientSpan.textContent = props.client_name || '';
+                
+                var timeSpan = document.createElement('span');
+                timeSpan.className = 'appt-time';
+                timeSpan.textContent = props.time || '';
+                
+                header.appendChild(clientSpan);
+                header.appendChild(timeSpan);
+                card.appendChild(header);
+                
+                // Body
+                var body = document.createElement('div');
+                body.className = 'appt-body';
+                body.textContent = props.service_name || '';
+                card.appendChild(body);
+                
+                // Footer
+                var footer = document.createElement('div');
+                footer.className = 'appt-footer';
+                
+                var priceSpan = document.createElement('span');
+                priceSpan.textContent = (props.price != null ? props.price : '') + '€';
+                
+                var iconWrapper = document.createElement('div');
+                iconWrapper.className = 'appt-icon';
+                var iconElem = document.createElement('i');
+                iconElem.className = 'fas ' + iconClass;
+                iconWrapper.appendChild(iconElem);
+                
+                footer.appendChild(priceSpan);
+                footer.appendChild(iconWrapper);
+                card.appendChild(footer);
+                
+                return { domNodes: [card] };
             },
             eventClick: function(info) {
                 if(info.event.url) {
@@ -297,12 +328,15 @@
         
         calendar.render();
         
-        // Polling para "WebSockets/Realtime"
+        // Atualização periódica segura de eventos (apenas com separador visível)
+        var isFetchingCalendar = false;
         setInterval(function() {
-            if (calendar) {
+            if (calendar && !document.hidden && !isFetchingCalendar) {
+                isFetchingCalendar = true;
                 calendar.refetchEvents();
+                setTimeout(function() { isFetchingCalendar = false; }, 2000);
             }
-        }, 10000); // 10 segundos
+        }, 30000); // 30 segundos
     });
 
     function setView(viewName) {

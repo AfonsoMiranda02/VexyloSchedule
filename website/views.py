@@ -1,166 +1,55 @@
+import json
+import logging
+from datetime import datetime, date, timedelta, time as dt_time
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import JsonResponse
-from datetime import datetime, timedelta, time as dt_time
-from django.contrib.auth import login
+from django.http import JsonResponse, HttpResponseRedirect
+from django.contrib.auth import login, get_user_model
 from django.contrib.auth.decorators import login_required
-from django.contrib import messages
-from .models import BusinessInfo, ServiceCategory, Service, Appointment, StaffMember, Testimonial
-from .forms import UserRegisterForm, AppointmentForm
-
-def home_view(request):
-    context = {
-        'business_info': BusinessInfo.objects.first(),
-        'categories': ServiceCategory.objects.prefetch_related('service_set').all(),
-        'staff': StaffMember.objects.all(),
-        'testimonials': Testimonial.objects.filter(is_visible=True),
-    }
-    return render(request, 'website/home.html', context)
-
-def register_view(request):
-    if request.method == 'POST':
-        form = UserRegisterForm(request.POST)
-        if form.is_valid():
-            user = form.save()
-            
-            from .models import UserProfile
-            UserProfile.objects.create(user=user, phone=form.cleaned_data.get('phone'))
-            
-            login(request, user)
-            messages.success(request, "Conta criada com sucesso! Bem-vindo(a).")
-            return redirect('dashboard')
-    else:
-        form = UserRegisterForm()
-    return render(request, 'website/register.html', {'form': form})
-
-@login_required
-def book_appointment_view(request):
-    if request.method == 'POST':
-        form = AppointmentForm(request.POST)
-        if form.is_valid():
-            appointment = form.save(commit=False)
-            appointment.user = request.user
-            appointment.save()
-            messages.success(request, "Marcação confirmada! O pagamento será efetuado presencialmente no salão.")
-            return redirect('dashboard')
-    else:
-        form = AppointmentForm()
-    return render(request, 'website/book_appointment.html', {'form': form})
-
-@login_required
-def client_dashboard_view(request):
-    context = {
-        'appointments': Appointment.objects.filter(user=request.user),
-        'business_info': BusinessInfo.objects.first(),
-    }
-    return render(request, 'website/dashboard.html', context)
-
-@login_required
-def cancel_appointment_view(request, pk):
-    appointment = get_object_or_404(Appointment, id=pk, user=request.user)
-    if request.method == 'POST':
-        if appointment.status != 'Cancelada':
-            appointment.status = 'Cancelada'
-            appointment.save()
-            messages.success(request, "A sua marcação foi cancelada com sucesso.")
-        else:
-            messages.info(request, "Esta marcação já se encontra cancelada.")
-    return redirect('dashboard')
-
-def get_available_times(request):
-    date_str = request.GET.get('date')
-    staff_id = request.GET.get('staff_id')
-    
-    if not date_str:
-        return JsonResponse({'available_times': []})
-        
-    try:
-        selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-    except ValueError:
-        return JsonResponse({'available_times': []})
-        
-    weekday = selected_date.weekday()
-    
-    # Dom (6) está fechado
-    if weekday == 6:
-        return JsonResponse({'available_times': []})
-        
-    # Segunda a Sábado: 09:00 - 19:00
-    start_time = dt_time(9, 0)
-    end_time = dt_time(19, 0)
-        
-    # Gerar blocos de 30 min
-    available_blocks = []
-    current_dt = datetime.combine(selected_date, start_time)
-    end_dt = datetime.combine(selected_date, end_time)
-    
-    while current_dt + timedelta(minutes=30) <= end_dt:
-        available_blocks.append(current_dt.time().strftime('%H:%M'))
-        current_dt += timedelta(minutes=30)
-        
-    # Remover blocos ocupados
-    appointments = Appointment.objects.filter(date=selected_date).exclude(status='Cancelada')
-    
-    if staff_id:
-        appointments = appointments.filter(staff_member_id=staff_id)
-        
-    occupied_times = [apt.time.strftime('%H:%M') for apt in appointments]
-    
-    final_times = [t for t in available_blocks if t not in occupied_times]
-    
-    return JsonResponse({'available_times': final_times})
-
 from django.contrib.admin.views.decorators import staff_member_required
-from django.db.models import Count, Sum
-from django.utils import timezone
-from django.contrib.auth import get_user_model
-
-@staff_member_required
-def admin_dashboard_api_view(request):
-    User = get_user_model()
-    today = timezone.localdate()
-    
-    # KPIs
-    total_clients = User.objects.filter(is_staff=False).count()
-    appointments_today = Appointment.objects.filter(date=today).count()
-    
-    start_of_month = today.replace(day=1)
-    # Revenue is sum of confirmed appointments price
-    revenue_agg = Appointment.objects.filter(
-        date__gte=start_of_month,
-        status='Confirmada'
-    ).aggregate(total=Sum('service__price'))
-    revenue_month = revenue_agg['total'] or 0
-    
-    # Chart Data (Last 7 days)
-    chart_labels = []
-    chart_data = []
-    
-from django.shortcuts import render, redirect, get_object_or_404
-from django.http import JsonResponse
-from datetime import datetime, timedelta, time as dt_time
-from django.contrib.auth import login
-from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from django.contrib import messages
-from .models import BusinessInfo, ServiceCategory, Appointment, StaffMember, Testimonial
+from django.utils import timezone
+from django.db.models import Count, Sum, Q
+from django.conf import settings
+from django.contrib.auth import views as auth_views
+
+from .models import (
+    BusinessInfo, BusinessOpeningHours, ServiceCategory, Service, 
+    Appointment, StaffMember, Testimonial, UserProfile
+)
 from .forms import UserRegisterForm, AppointmentForm
+from .services.booking import (
+    BookingService, BookingError, BusinessClosedError, 
+    InvalidSlotError, SlotOccupiedError, StaffUnavailableError
+)
+from .utils.ratelimit import rate_limit
+
+logger = logging.getLogger(__name__)
+
 
 def home_view(request):
+    """Página inicial pública do VexyloSchedule."""
     context = {
-        'categories': ServiceCategory.objects.prefetch_related('service_set').all(),
-        'staff': StaffMember.objects.all(),
+        'business_info': BusinessInfo.get_solo(),
+        'categories': ServiceCategory.objects.prefetch_related(
+            models_prefetch := models_prefetch if False else 'service_set'
+        ).all(),
+        'staff': StaffMember.objects.filter(is_active=True),
         'testimonials': Testimonial.objects.filter(is_visible=True),
     }
     return render(request, 'website/home.html', context)
 
+
+@rate_limit('register', limit=5, period=300)
 def register_view(request):
+    """Registo de novos clientes com validação de termos e normalização de email."""
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+        
     if request.method == 'POST':
         form = UserRegisterForm(request.POST)
         if form.is_valid():
             user = form.save()
-            
-            from .models import UserProfile
-            UserProfile.objects.create(user=user, phone=form.cleaned_data.get('phone'))
-            
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(request, "Conta criada com sucesso! Bem-vindo(a).")
             return redirect('dashboard')
@@ -168,83 +57,122 @@ def register_view(request):
         form = UserRegisterForm()
     return render(request, 'website/register.html', {'form': form})
 
+
 @login_required
+@rate_limit('book', limit=15, period=60)
 def book_appointment_view(request):
+    """
+    Agendamento de marcações server-authoritative através do BookingService.
+    Nunca confia nas opções enviadas pelo browser e impede double-booking concorrente.
+    """
+    business = BusinessInfo.get_solo()
+    closed_days_qs = BusinessOpeningHours.objects.filter(business=business, is_open=False)
+    # Converte weekday Python (0=Seg..6=Dom) para JS getDay() (0=Dom..6=Sáb)
+    closed_weekdays_js = [(day.weekday + 1) % 7 for day in closed_days_qs]
+
     if request.method == 'POST':
         form = AppointmentForm(request.POST)
         if form.is_valid():
-            appointment = form.save(commit=False)
-            appointment.user = request.user
-            
-            # Se não escolheu profissional, atribuímos o primeiro que estiver livre
-            if not appointment.staff_member:
-                from datetime import datetime, timedelta
-                service = appointment.service
-                st = appointment.time
-                et = (datetime.combine(appointment.date, st) + timedelta(minutes=service.duration)).time()
-                
-                staff_members = StaffMember.objects.all()
-                appointments = Appointment.objects.filter(date=appointment.date).exclude(status='Cancelada')
-                
-                free_staff = None
-                for staff in staff_members:
-                    staff_apts = appointments.filter(staff_member=staff)
-                    collision = False
-                    for apt in staff_apts:
-                        apt_st = apt.time
-                        apt_et = apt.end_time if apt.end_time else (datetime.combine(apt.date, apt.time) + timedelta(minutes=30)).time()
-                        if apt_st < et and apt_et > st:
-                            collision = True
-                            break
-                    if not collision:
-                        free_staff = staff
-                        break
-                        
-                if free_staff:
-                    appointment.staff_member = free_staff
-            
-            appointment.save()
-            messages.success(request, "Marcação confirmada! O pagamento será efetuado presencialmente no salão.")
-            return redirect('dashboard')
+            service = form.cleaned_data['service']
+            staff_member = form.cleaned_data.get('staff_member')
+            target_date = form.cleaned_data['date']
+            target_time = form.cleaned_data['time']
+
+            try:
+                # O BookingService executa a reserva dentro de transaction.atomic com locks
+                appointment = BookingService.book_appointment(
+                    user=request.user,
+                    service=service,
+                    target_date=target_date,
+                    start_time=target_time,
+                    staff_member=staff_member
+                )
+                messages.success(request, "Marcação confirmada! O pagamento será efetuado presencialmente no salão.")
+                return redirect('dashboard')
+            except BookingError as e:
+                messages.error(request, str(e))
+            except Exception as e:
+                logger.exception("Erro inesperado ao criar marcação")
+                messages.error(request, "Ocorreu um erro ao processar a marcação. Por favor verifique os dados e tente novamente.")
     else:
         form = AppointmentForm()
-    return render(request, 'website/book_appointment.html', {'form': form})
+        
+    return render(request, 'website/book_appointment.html', {
+        'form': form,
+        'closed_weekdays_js': closed_weekdays_js,
+        'business_info': business
+    })
+
 
 @login_required
 def client_dashboard_view(request):
-    from .models import UserProfile
-    profile, created = UserProfile.objects.get_or_create(user=request.user)
+    """Área pessoal do cliente com histórico de marcações e estados fidedignos."""
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
     
     if request.method == 'POST' and 'phone' in request.POST:
-        profile.phone = request.POST.get('phone')
-        profile.save()
-        messages.success(request, 'Número de telefone atualizado com sucesso!')
-        return redirect('dashboard')
-        
+        phone_val = request.POST.get('phone', '').strip()
+        if phone_val:
+            profile.phone = phone_val
+            profile.save()
+            messages.success(request, 'Número de telefone atualizado com sucesso!')
+            return redirect('dashboard')
+        else:
+            messages.error(request, 'Por favor insira um número de telefone válido.')
+
     prompt_phone = not bool(profile.phone)
+    appointments = (
+        Appointment.objects.filter(user=request.user)
+        .select_related('service', 'staff_member')
+        .order_by('-date', '-time')
+    )
 
     context = {
-        'appointments': Appointment.objects.filter(user=request.user),
-        'business_info': BusinessInfo.objects.first(),
+        'appointments': appointments,
+        'business_info': BusinessInfo.get_solo(),
         'prompt_phone': prompt_phone,
     }
     return render(request, 'website/dashboard.html', context)
 
+
 @login_required
+@require_POST
+@rate_limit('cancel', limit=10, period=60)
 def cancel_appointment_view(request, pk):
+    """
+    Cancelamento seguro de marcações verificado server-side.
+    Valida propriedade, elegibilidade de estado e limite de antecedência configurado.
+    """
     appointment = get_object_or_404(Appointment, id=pk, user=request.user)
-    if request.method == 'POST':
-        if appointment.status != 'Cancelada':
-            appointment.status = 'Cancelada'
-            appointment.cancellation_reason = request.POST.get('cancellation_reason', '')
-            appointment.cancellation_notes = request.POST.get('cancellation_notes', '')
-            appointment.save()
-            messages.success(request, "A sua marcação foi cancelada com sucesso.")
-        else:
-            messages.info(request, "Esta marcação já se encontra cancelada.")
+    
+    if not appointment.can_be_cancelled:
+        business = BusinessInfo.get_solo()
+        messages.error(
+            request, 
+            f"Já não é possível cancelar esta marcação online (o prazo limite é de {business.cancel_limit_hours} horas antes do horário)."
+        )
+        return redirect('dashboard')
+        
+    reason = request.POST.get('cancellation_reason', '').strip()[:100]
+    notes = request.POST.get('cancellation_notes', '').strip()[:500]
+    
+    try:
+        appointment.transition_to('Cancelada')
+        appointment.cancellation_reason = reason or "Cancelada pelo cliente"
+        appointment.cancellation_notes = notes
+        appointment.save()
+        messages.success(request, "A sua marcação foi cancelada com sucesso.")
+    except Exception as e:
+        logger.exception(f"Erro ao cancelar marcação #{pk}")
+        messages.error(request, "Não foi possível cancelar a marcação. Por favor contacte o suporte.")
+        
     return redirect('dashboard')
 
+
 def get_available_times(request):
+    """
+    API de consulta de disponibilidade reutilizando BookingService.
+    Calcula slots sem N+1 queries e retorna informação sobre dias de funcionamento.
+    """
     date_str = request.GET.get('date')
     staff_id = request.GET.get('staff_id')
     service_id = request.GET.get('service_id')
@@ -254,159 +182,86 @@ def get_available_times(request):
         
     try:
         selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        service = Service.objects.get(id=service_id)
-        duration = service.duration
+        service = Service.objects.get(id=service_id, is_active=True)
     except (ValueError, Service.DoesNotExist):
         return JsonResponse({'available_times': []})
         
-    weekday = selected_date.weekday()
-    
-    # Dom (6) está fechado (Isto pode depois ser parametrizado no BusinessInfo)
-    if weekday == 6:
-        return JsonResponse({'available_times': []})
-        
-    business = BusinessInfo.objects.first()
-    opening_time = business.opening_time if business else dt_time(9, 0)
-    closing_time = business.closing_time if business else dt_time(19, 0)
-    lunch_start = business.lunch_start if business else None
-    lunch_end = business.lunch_end if business else None
-        
-    # Gerar blocos (Granularidade 30 min)
-    available_blocks = []
-    current_dt = datetime.combine(selected_date, opening_time)
-    end_dt = datetime.combine(selected_date, closing_time)
-    
-    while current_dt + timedelta(minutes=duration) <= end_dt:
-        st = current_dt.time()
-        et = (current_dt + timedelta(minutes=duration)).time()
-        
-        # Omitir bloco se sobrepõe almoço
-        if lunch_start and lunch_end:
-            if st < lunch_end and et > lunch_start:
-                current_dt += timedelta(minutes=30)
-                continue
-                
-        available_blocks.append((st, et))
-        current_dt += timedelta(minutes=30)
-        
-    appointments = Appointment.objects.filter(date=selected_date).exclude(status='Cancelada')
-    staff_members = StaffMember.objects.all()
-    
+    staff_member = None
     if staff_id:
-        staff_members = staff_members.filter(id=staff_id)
-        
-    final_times = []
-    now = timezone.now()
-    
-    for (st, et) in available_blocks:
-        st_str = st.strftime('%H:%M')
-        slot_dt = timezone.make_aware(datetime.combine(selected_date, st))
-        is_past = slot_dt < now
-        
-        is_occupied = True
-        if not is_past:
-            if staff_members.exists():
-                # Procurar pelo menos 1 profissional livre
-                for staff in staff_members:
-                    staff_apts = appointments.filter(staff_member=staff)
-                    collision = False
-                    for apt in staff_apts:
-                        apt_st = apt.time
-                        apt_et = apt.end_time if apt.end_time else (datetime.combine(selected_date, apt.time) + timedelta(minutes=30)).time()
-                        if apt_st < et and apt_et > st:
-                            collision = True
-                            break
-                    if not collision:
-                        is_occupied = False
-                        break
-            else:
-                # Fallback se não existirem profissionais
-                collision = False
-                for apt in appointments:
-                    apt_st = apt.time
-                    apt_et = apt.end_time if apt.end_time else (datetime.combine(selected_date, apt.time) + timedelta(minutes=30)).time()
-                    if apt_st < et and apt_et > st:
-                        collision = True
-                        break
-                is_occupied = collision
-                
-        final_times.append({
-            'time': st_str,
-            'disabled': is_past or is_occupied,
-            'reason': 'past' if is_past else ('occupied' if is_occupied else '')
-        })
-    
-    return JsonResponse({'available_times': final_times})
+        staff_member = StaffMember.objects.filter(id=staff_id, is_active=True).first()
 
-from django.contrib.admin.views.decorators import staff_member_required
-from django.db.models import Count, Sum
-from django.utils import timezone
-from django.contrib.auth import get_user_model
+    slots = BookingService.get_available_slots(
+        target_date=selected_date,
+        service=service,
+        staff_member=staff_member
+    )
+    
+    return JsonResponse({'available_times': slots})
+
 
 @staff_member_required
 def admin_dashboard_api_view(request):
+    """
+    Métricas e KPIs analíticos do painel de administração.
+    IMPORTANTE: Estritamente livre de mutações de base de dados (GET idempotente).
+    """
     User = get_user_model()
     today = timezone.localdate()
     now_time = timezone.localtime().time()
-    
-    # [Auto-Close] Fecho automático de marcações antigas (Otimizado)
-    Appointment.objects.filter(
-        status__in=['Pendente', 'Confirmada'], 
-        date__lt=today
-    ).update(status='Concluída')
-    
-    Appointment.objects.filter(
-        status__in=['Pendente', 'Confirmada'],
-        date=today,
-        end_time__lt=now_time
-    ).update(status='Concluída')
-    
-    # KPIs
+
+    # KPIs sem efeitos secundários
     total_clients = User.objects.filter(is_staff=False).count()
-    appointments_today = Appointment.objects.filter(date=today).count()
-    
-    start_of_month = today.replace(day=1)
-    
-    # Novas métricas em vez de Faturação e DB Status
-    upcoming_appointments = Appointment.objects.filter(date__gte=today).exclude(status='Cancelada').count()
-    total_services = Service.objects.count()
-    
-    # Chart Data (Last 7 days)
+    appointments_today = Appointment.objects.filter(date=today).exclude(status='Cancelada').count()
+    upcoming_appointments = Appointment.objects.filter(
+        date__gte=today, 
+        status__in=['Pendente', 'Confirmada']
+    ).count()
+    total_services = Service.objects.filter(is_active=True).count()
+
+    # Gráfico dos últimos 7 dias
     chart_labels = []
     chart_data = []
-    
     for i in range(6, -1, -1):
         day = today - timedelta(days=i)
-        count = Appointment.objects.filter(date=day).count()
+        count = Appointment.objects.filter(date=day).exclude(status='Cancelada').count()
         chart_labels.append(day.strftime('%d/%m'))
         chart_data.append(count)
-        
-    # Top Services (Doughnut Chart)
-    top_services_qs = Appointment.objects.values('service__name').annotate(total=Count('id')).order_by('-total')[:5]
-    top_services_labels = [item['service__name'] for item in top_services_qs]
+
+    # Top Serviços (exclui canceladas para refletir procura real)
+    top_services_qs = (
+        Appointment.objects.exclude(status='Cancelada')
+        .values('service__name')
+        .annotate(total=Count('id'))
+        .order_by('-total')[:5]
+    )
+    top_services_labels = [item['service__name'] or 'Serviço' for item in top_services_qs]
     top_services_data = [item['total'] for item in top_services_qs]
-    
-    # Status Distribution (Pie/Polar Chart)
+
+    # Distribuição de estados
     status_qs = Appointment.objects.values('status').annotate(total=Count('id')).order_by('-total')
     status_labels = [item['status'] for item in status_qs]
     status_data = [item['total'] for item in status_qs]
-    
-    # Próxima Marcação
-    from django.db.models import Q
+
+    # Próxima Marcação Ativa
     next_appointment_obj = Appointment.objects.filter(
         Q(date=today, time__gte=now_time) | Q(date__gt=today),
         status__in=['Pendente', 'Confirmada']
-    ).order_by('date', 'time').first()
-    
+    ).select_related('user', 'service', 'staff_member').order_by('date', 'time').first()
+
     next_appt_data = None
     if next_appointment_obj:
+        client_display = (
+            next_appointment_obj.user.get_full_name() or 
+            next_appointment_obj.user.username
+        )
         next_appt_data = {
-            'client_name': next_appointment_obj.user.get_full_name() or next_appointment_obj.user.username,
-            'service_name': next_appointment_obj.service.name,
+            'client_name': client_display,
+            'service_name': next_appointment_obj.effective_service_name,
             'staff_name': next_appointment_obj.staff_member.name if next_appointment_obj.staff_member else 'Qualquer profissional',
             'date': next_appointment_obj.date.strftime('%d/%m/%Y'),
             'time': next_appointment_obj.time.strftime('%H:%M'),
         }
+
     return JsonResponse({
         'total_clients': total_clients,
         'appointments_today': appointments_today,
@@ -421,14 +276,18 @@ def admin_dashboard_api_view(request):
         'next_appointment': next_appt_data,
     })
 
+
 @staff_member_required
 def api_calendar_events(request):
+    """
+    Retorna os eventos de calendário em formato compatível com FullCalendar.
+    Usa select_related para performance e sanitiza propriedades estendidas.
+    """
     start_date = request.GET.get('start')
     end_date = request.GET.get('end')
     search_query = request.GET.get('q', '').strip()
     
-    # FullCalendar envia 'start' e 'end' no formato ISO8601
-    appointments = Appointment.objects.all()
+    appointments = Appointment.objects.select_related('user', 'service', 'staff_member').all()
     
     if start_date:
         appointments = appointments.filter(date__gte=start_date.split('T')[0])
@@ -436,7 +295,6 @@ def api_calendar_events(request):
         appointments = appointments.filter(date__lte=end_date.split('T')[0])
         
     if search_query:
-        from django.db.models import Q
         appointments = appointments.filter(
             Q(user__first_name__icontains=search_query) |
             Q(user__last_name__icontains=search_query) |
@@ -445,84 +303,122 @@ def api_calendar_events(request):
         
     events = []
     for appt in appointments:
-        color = '#f59e0b'
-        if appt.status == 'Confirmada':
-            color = '#10b981'
-        elif appt.status == 'Concluída':
-            color = '#3b82f6' # Blue
-        elif appt.status == 'Cancelada':
-            color = '#ef4444' # Red
-        elif appt.status == 'Faltou':
-            color = '#6b7280' # Grey
+        colors = {
+            'Confirmada': '#10b981',
+            'Pendente': '#f59e0b',
+            'Concluída': '#3b82f6',
+            'Cancelada': '#ef4444',
+            'Faltou': '#6b7280'
+        }
+        color = colors.get(appt.status, '#6b7280')
+        client_name = appt.user.get_full_name() or appt.user.username
             
         dt_str = f"{appt.date.isoformat()}T{appt.time.isoformat()}"
+        end_time = appt.end_time or (datetime.combine(appt.date, appt.time) + timedelta(minutes=appt.effective_duration)).time()
+        
         event_dict = {
             'id': appt.id,
-            'title': f'{appt.service.name} - {appt.user.first_name or appt.user.username}',
+            'title': f"{appt.effective_service_name} - {client_name}",
             'start': dt_str,
-            'url': f'/vexylo-admin/website/appointment/{appt.id}/change/',
+            'end': f"{appt.date.isoformat()}T{end_time.isoformat()}",
+            'url': f"/vexylo-admin/website/appointment/{appt.id}/change/",
             'backgroundColor': color,
             'borderColor': color,
             'extendedProps': {
-                'client_name': appt.user.first_name or appt.user.username,
-                'service_name': appt.service.name,
+                'client_name': client_name,
+                'service_name': appt.effective_service_name,
                 'time': appt.time.strftime('%H:%M'),
                 'status': appt.status,
-                'price': str(appt.service.price)
+                'price': str(appt.effective_price)
             }
         }
-        
-        if appt.end_time:
-            end_time = appt.end_time
-        else:
-            end_time = (datetime.combine(appt.date, appt.time) + timedelta(minutes=appt.service.duration)).time()
-            
-        event_dict['end'] = f"{appt.date.isoformat()}T{end_time.isoformat()}"
-            
         events.append(event_dict)
         
     return JsonResponse(events, safe=False)
 
-from django.views.decorators.http import require_POST
-import json
 
 @login_required
 @require_POST
+@rate_limit('testimonial', limit=3, period=3600)
 def submit_testimonial(request):
+    """
+    Submissão de testemunhos protegida com moderação obrigatória (is_visible=False)
+    e vinculação ao utilizador autenticado.
+    """
     try:
         data = json.loads(request.body)
         rating = int(data.get('rating', 5))
         text = data.get('text', '').strip()
         
-        if not text:
-            return JsonResponse({'success': False, 'error': 'O texto do testemunho é obrigatório.'})
+        if not text or len(text) < 5:
+            return JsonResponse({'success': False, 'error': 'O texto do testemunho deve ter pelo menos 5 carateres.'}, status=400)
             
+        if len(text) > 1000:
+            return JsonResponse({'success': False, 'error': 'O texto não pode exceder 1000 carateres.'}, status=400)
+
         if rating < 1 or rating > 5:
-            return JsonResponse({'success': False, 'error': 'A classificação deve ser entre 1 e 5.'})
+            return JsonResponse({'success': False, 'error': 'A classificação deve ser entre 1 e 5 estrelas.'}, status=400)
             
         client_name = request.user.first_name or request.user.username
         
         Testimonial.objects.create(
+            user=request.user,
             client_name=client_name,
             text=text,
-            rating=rating
+            rating=rating,
+            is_visible=False # Moderação obrigatória por omissão
         )
         
-        return JsonResponse({'success': True, 'message': 'Obrigado pelo seu testemunho!'})
+        return JsonResponse({
+            'success': True, 
+            'message': 'Obrigado pelo seu testemunho! O seu comentário será revisto pela nossa equipa antes de ser publicado.'
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Formato de dados JSON inválido.'}, status=400)
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)})
+        logger.exception("Erro inesperado ao submeter testemunho")
+        return JsonResponse({
+            'success': False, 
+            'error': 'Ocorreu um erro interno ao processar a avaliação. Por favor tente novamente mais tarde.'
+        }, status=500)
 
 
 def privacy_policy_view(request):
-    return render(request, 'website/privacy_policy.html', {'business_info': BusinessInfo.objects.first()})
+    return render(request, 'website/privacy_policy.html', {'business_info': BusinessInfo.get_solo()})
+
 
 def terms_conditions_view(request):
-    return render(request, 'website/terms_conditions.html', {'business_info': BusinessInfo.objects.first()})
+    return render(request, 'website/terms_conditions.html', {'business_info': BusinessInfo.get_solo()})
 
-from django.contrib.auth import views as auth_views
 
 class CustomPasswordResetView(auth_views.PasswordResetView):
+    """
+    Recuperação de password segura contra envenenamento de cabeçalho Host.
+    Garante o envio de exatamente UM email através da chamada direta a form.save
+    sem invocar super().form_valid(form) duplicado.
+    """
+    def get_trusted_domain(self):
+        # 1. Configuração canónica explícita se definida
+        canonical = getattr(settings, 'CANONICAL_HOST', None)
+        if canonical:
+            return canonical
+            
+        # 2. Primeiro host permitido não-wildcard
+        allowed = [h for h in settings.ALLOWED_HOSTS if h not in ('*', '')]
+        if allowed:
+            # Se for um domínio genérico com ponto à frente (ex: .onrender.com), usar o host atual se for subdomínio
+            req_host = self.request.get_host().split(':')[0]
+            for h in allowed:
+                if h.startswith('.') and req_host.endswith(h):
+                    return self.request.get_host()
+                if h == req_host:
+                    return self.request.get_host()
+            return allowed[0]
+            
+        return 'localhost:8000'
+
     def form_valid(self, form):
+        trusted_domain = self.get_trusted_domain()
         opts = {
             "use_https": self.request.is_secure(),
             "token_generator": self.token_generator,
@@ -532,9 +428,10 @@ class CustomPasswordResetView(auth_views.PasswordResetView):
             "request": self.request,
             "html_email_template_name": self.html_email_template_name,
             "extra_email_context": self.extra_email_context,
+            "domain_override": trusted_domain,
         }
-        # Force the domain to the current request's domain
-        opts["domain_override"] = self.request.get_host()
+        # Envia exatamente 1 email usando o domínio fidedigno
         form.save(**opts)
-        return super().form_valid(form)
-
+        # Redireciona diretamente para a página de sucesso sem chamar super().form_valid
+        # (pois o super().form_valid chamaria form.save novamente enviando 2 emails)
+        return HttpResponseRedirect(self.get_success_url())

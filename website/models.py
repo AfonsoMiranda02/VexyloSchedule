@@ -1,6 +1,11 @@
 from django.db import models
 from django.contrib.auth.models import User
-from datetime import time
+from datetime import time, datetime, date, timedelta
+from decimal import Decimal
+from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
+from django.db.models import Q, CheckConstraint, Index
+from django.utils import timezone
 
 class Utilizador(User):
     class Meta:
@@ -17,15 +22,46 @@ class BusinessInfo(models.Model):
     nif = models.CharField(max_length=20, null=True, blank=True, verbose_name="NIF")
     schedule = models.TextField(verbose_name="Horário de Funcionamento")
     
-    # Horários estruturados para cálculo de disponibilidade
-    opening_time = models.TimeField(default=time(9, 0), verbose_name="Hora de Abertura")
-    closing_time = models.TimeField(default=time(19, 0), verbose_name="Hora de Fecho")
+    # Horários padrão / fallback para cálculo de disponibilidade
+    opening_time = models.TimeField(default="09:00:00", verbose_name="Hora de Abertura Padrão")
+    closing_time = models.TimeField(default="19:00:00", verbose_name="Hora de Fecho Padrão")
     lunch_start = models.TimeField(blank=True, null=True, verbose_name="Início Almoço")
     lunch_end = models.TimeField(blank=True, null=True, verbose_name="Fim Almoço")
     
     google_maps_url = models.URLField(max_length=500, blank=True, null=True, verbose_name="Link do Google Maps")
     description = models.TextField(blank=True, null=True, verbose_name="Descrição da Empresa")
-    cancel_limit_hours = models.IntegerField(default=24, verbose_name="Horas limite para cancelamento (Ex: 24 para 24h antes)")
+    cancel_limit_hours = models.IntegerField(
+        default=24, 
+        validators=[MinValueValidator(0), MaxValueValidator(168)],
+        verbose_name="Horas limite para cancelamento (Ex: 24 para 24h antes)"
+    )
+
+    def clean(self):
+        super().clean()
+        if self.lunch_start and self.lunch_end:
+            if self.lunch_start >= self.lunch_end:
+                raise ValidationError({"lunch_start": "O início do almoço deve ser anterior ao fim do almoço."})
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        # Singleton pattern: garante que apenas existe 1 registo de BusinessInfo
+        if not self.pk and BusinessInfo.objects.exists():
+            existing = BusinessInfo.objects.first()
+            self.pk = existing.pk
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls):
+        """Retorna a instância singleton ou cria uma com defaults seguros."""
+        info = cls.objects.first()
+        if not info:
+            info = cls.objects.create(
+                name="VexyloSchedule",
+                address="Morada a definir",
+                phone="900000000",
+                schedule="Segunda a Sábado: 09:00 - 19:00"
+            )
+        return info
 
     def __str__(self):
         return self.name
@@ -34,6 +70,53 @@ class BusinessInfo(models.Model):
         db_table = 'business_info'
         verbose_name = "Informação do Negócio"
         verbose_name_plural = "Informação do Negócio"
+        constraints = [
+            CheckConstraint(check=Q(cancel_limit_hours__gte=0), name='business_cancel_limit_positive'),
+        ]
+
+
+class BusinessOpeningHours(models.Model):
+    WEEKDAY_CHOICES = [
+        (0, 'Segunda-feira'),
+        (1, 'Terça-feira'),
+        (2, 'Quarta-feira'),
+        (3, 'Quinta-feira'),
+        (4, 'Sexta-feira'),
+        (5, 'Sábado'),
+        (6, 'Domingo'),
+    ]
+    business = models.ForeignKey(BusinessInfo, on_delete=models.CASCADE, related_name='opening_hours')
+    weekday = models.IntegerField(choices=WEEKDAY_CHOICES, verbose_name="Dia da Semana")
+    is_open = models.BooleanField(default=True, verbose_name="Aberto?")
+    opening_time = models.TimeField(default="09:00:00", verbose_name="Hora de Abertura")
+    closing_time = models.TimeField(default="19:00:00", verbose_name="Hora de Fecho")
+    lunch_start = models.TimeField(blank=True, null=True, verbose_name="Início Almoço")
+    lunch_end = models.TimeField(blank=True, null=True, verbose_name="Fim Almoço")
+
+    class Meta:
+        db_table = 'business_opening_hours'
+        ordering = ['weekday']
+        unique_together = ('business', 'weekday')
+        verbose_name = "Horário por Dia"
+        verbose_name_plural = "Horários por Dia"
+
+    def clean(self):
+        super().clean()
+        if self.is_open:
+            if self.opening_time >= self.closing_time:
+                raise ValidationError("A hora de abertura deve ser anterior à hora de fecho.")
+            if (self.lunch_start and not self.lunch_end) or (self.lunch_end and not self.lunch_start):
+                raise ValidationError("Ambos os horários de início e fim de almoço devem ser definidos juntos.")
+            if self.lunch_start and self.lunch_end:
+                if self.lunch_start >= self.lunch_end:
+                    raise ValidationError("O início do almoço deve ser anterior ao fim do almoço.")
+                if self.lunch_start < self.opening_time or self.lunch_end > self.closing_time:
+                    raise ValidationError("O intervalo de almoço deve situar-se dentro do horário de abertura e fecho.")
+
+    def __str__(self):
+        status = "Aberto" if self.is_open else "Fechado"
+        return f"{self.get_weekday_display()} ({status})"
+
 
 class ServiceCategory(models.Model):
     name = models.CharField(max_length=100, verbose_name="Nome da Categoria")
@@ -46,42 +129,92 @@ class ServiceCategory(models.Model):
         verbose_name = "Categoria de Serviço"
         verbose_name_plural = "Categorias de Serviços"
 
+
 class Service(models.Model):
-    category = models.ForeignKey(ServiceCategory, on_delete=models.CASCADE, verbose_name="Categoria")
+    category = models.ForeignKey(ServiceCategory, on_delete=models.PROTECT, verbose_name="Categoria")
     name = models.CharField(max_length=200, verbose_name="Nome do Serviço")
     description = models.TextField(blank=True, null=True, verbose_name="Descrição")
-    price = models.DecimalField(max_digits=6, decimal_places=2, verbose_name="Preço")
-    duration = models.IntegerField(default=30, verbose_name="Duração (minutos)")
+    price = models.DecimalField(
+        max_digits=6, 
+        decimal_places=2, 
+        validators=[MinValueValidator(Decimal('0.00'))],
+        verbose_name="Preço"
+    )
+    duration = models.IntegerField(
+        default=30, 
+        validators=[MinValueValidator(5), MaxValueValidator(480)],
+        verbose_name="Duração (minutos)"
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Ativo para novas marcações?")
 
-    def __str__(self): return f"{self.name} - {self.price}€"
+    def clean(self):
+        super().clean()
+        if self.price is not None and self.price < Decimal('0.00'):
+            raise ValidationError({'price': 'O preço não pode ser negativo.'})
+        if self.duration is not None and self.duration <= 0:
+            raise ValidationError({'duration': 'A duração tem de ser superior a 0 minutos.'})
+
+    def __str__(self): 
+        status = "" if self.is_active else " (Inativo)"
+        return f"{self.name} - {self.price}€{status}"
+
     class Meta:
         db_table = 'services'
         ordering = ['category__order', 'name']
         verbose_name = "Serviço"
         verbose_name_plural = "Serviços"
+        constraints = [
+            CheckConstraint(check=Q(price__gte=0), name='service_price_non_negative'),
+            CheckConstraint(check=Q(duration__gt=0), name='service_duration_positive'),
+        ]
+
 
 class StaffMember(models.Model):
     name = models.CharField(max_length=100, verbose_name="Nome")
     role = models.CharField(max_length=100, verbose_name="Cargo")
     avatar_url = models.URLField(max_length=500, blank=True, null=True, verbose_name="URL da Fotografia")
+    is_active = models.BooleanField(default=True, verbose_name="Ativo para novas marcações?")
 
-    def __str__(self): return f"{self.name} - {self.role}"
+    def __str__(self): 
+        status = "" if self.is_active else " (Inativo)"
+        return f"{self.name} - {self.role}{status}"
+
     class Meta:
         db_table = 'staff_members'
         verbose_name = "Membro da Equipa"
         verbose_name_plural = "Equipa"
 
+
 class Testimonial(models.Model):
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='testimonials', verbose_name="Utilizador")
     client_name = models.CharField(max_length=100, verbose_name="Nome do Cliente")
     text = models.TextField(verbose_name="Testemunho")
-    rating = models.IntegerField(default=5, verbose_name="Classificação (1 a 5)")
-    is_visible = models.BooleanField(default=True, verbose_name="Visível no Site")
+    rating = models.IntegerField(
+        default=5, 
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+        verbose_name="Classificação (1 a 5)"
+    )
+    is_visible = models.BooleanField(default=False, verbose_name="Visível no Site (Moderado)")
+    created_at = models.DateTimeField(default=timezone.now, verbose_name="Data de Submissão")
 
-    def __str__(self): return f"Review de {self.client_name}"
+    def clean(self):
+        super().clean()
+        if self.rating is not None and (self.rating < 1 or self.rating > 5):
+            raise ValidationError({'rating': 'A classificação deve situar-se entre 1 e 5 estrelas.'})
+        if self.text and len(self.text.strip()) < 5:
+            raise ValidationError({'text': 'O testemunho deve ter pelo menos 5 carateres.'})
+
+    def __str__(self): return f"Review de {self.client_name} ({self.rating}★)"
+
     class Meta:
         db_table = 'testimonials'
+        ordering = ['-created_at']
         verbose_name = "Testemunho"
         verbose_name_plural = "Testemunhos"
+        constraints = [
+            CheckConstraint(check=Q(rating__gte=1, rating__lte=5), name='testimonial_rating_range'),
+        ]
+
 
 class Appointment(models.Model):
     STATUS_CHOICES = [
@@ -92,49 +225,105 @@ class Appointment(models.Model):
         ('Cancelada', 'Cancelada')
     ]
 
+    VALID_TRANSITIONS = {
+        'Pendente': {'Confirmada', 'Cancelada'},
+        'Confirmada': {'Concluída', 'Faltou', 'Cancelada'},
+        'Concluída': set(),
+        'Faltou': set(),
+        'Cancelada': set(),
+    }
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Cliente")
-    service = models.ForeignKey(Service, on_delete=models.CASCADE, verbose_name="Serviço")
-    staff_member = models.ForeignKey(StaffMember, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Especialista (Opcional)")
+    service = models.ForeignKey(Service, on_delete=models.PROTECT, verbose_name="Serviço")
+    staff_member = models.ForeignKey(StaffMember, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Especialista")
     date = models.DateField(verbose_name="Data da Marcação")
     time = models.TimeField(verbose_name="Hora da Marcação (Início)")
     end_time = models.TimeField(blank=True, null=True, verbose_name="Hora de Fim Estimada")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pendente')
+    
+    # Snapshots históricos da marcação
+    service_name_at_booking = models.CharField(max_length=200, blank=True, null=True, verbose_name="Serviço (ao marcar)")
+    price_at_booking = models.DecimalField(max_digits=6, decimal_places=2, blank=True, null=True, verbose_name="Preço (ao marcar)")
+    duration_at_booking = models.IntegerField(blank=True, null=True, verbose_name="Duração em minutos (ao marcar)")
+    
     cancellation_reason = models.CharField(max_length=100, blank=True, null=True, verbose_name="Motivo do Cancelamento")
     cancellation_notes = models.TextField(blank=True, null=True, verbose_name="Notas de Cancelamento")
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def transition_to(self, new_status, bypass=False):
+        """Aplica a máquina de estados validando transições lógicas."""
+        if not bypass and new_status != self.status:
+            allowed = self.VALID_TRANSITIONS.get(self.status, set())
+            if new_status not in allowed:
+                raise ValidationError(f"Transição de estado inválida: de '{self.status}' para '{new_status}'.")
+        self.status = new_status
+
     def save(self, *args, **kwargs):
-        if self.time and self.service and not self.end_time:
-            import datetime
-            dt = datetime.datetime.combine(datetime.date.today(), self.time)
-            dt = dt + datetime.timedelta(minutes=self.service.duration)
+        # Snapshots imutáveis ao momento da criação
+        if self.service_id:
+            if not self.service_name_at_booking:
+                self.service_name_at_booking = self.service.name
+            if self.price_at_booking is None:
+                self.price_at_booking = self.service.price
+            if self.duration_at_booking is None:
+                self.duration_at_booking = self.service.duration
+
+        effective_duration = self.duration_at_booking or (self.service.duration if self.service else 30)
+
+        if self.time and not self.end_time:
+            dt = datetime.combine(date.today(), self.time)
+            dt = dt + timedelta(minutes=effective_duration)
             self.end_time = dt.time()
+
         super().save(*args, **kwargs)
 
     @property
+    def effective_service_name(self):
+        return self.service_name_at_booking or (self.service.name if self.service else "Serviço")
+
+    @property
+    def effective_price(self):
+        return self.price_at_booking if self.price_at_booking is not None else (self.service.price if self.service else Decimal('0.00'))
+
+    @property
+    def effective_duration(self):
+        return self.duration_at_booking or (self.service.duration if self.service else 30)
+
+    @property
     def can_be_cancelled(self):
-        from django.utils import timezone
-        import datetime
+        if self.status not in ('Pendente', 'Confirmada'):
+            return False
+            
         business = BusinessInfo.objects.first()
         limit_hours = business.cancel_limit_hours if business else 24
         
         # Obter datetime da marcação (timezone aware)
-        apt_dt = datetime.datetime.combine(self.date, self.time)
-        apt_aware = timezone.make_aware(apt_dt)
+        apt_dt = datetime.combine(self.date, self.time)
+        current_tz = timezone.get_current_timezone()
+        apt_aware = timezone.make_aware(apt_dt, current_tz) if timezone.is_naive(apt_dt) else apt_dt
         
         # Limite de tempo = agora + X horas
-        return timezone.now() + datetime.timedelta(hours=limit_hours) <= apt_aware
+        return timezone.now() + timedelta(hours=limit_hours) <= apt_aware
 
-    def __str__(self): return f"{self.user.username} - {self.service.name}"
+    def __str__(self): 
+        return f"{self.user.username} - {self.effective_service_name}"
+
     class Meta:
         db_table = 'appointments'
         ordering = ['-date', '-time']
         verbose_name = "Marcação"
         verbose_name_plural = "Marcações"
+        indexes = [
+            Index(fields=['date', 'staff_member', 'status'], name='idx_appt_date_staff_status'),
+            Index(fields=['user', 'date'], name='idx_appt_user_date'),
+        ]
+
 
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     phone = models.CharField(max_length=20, verbose_name="Telefone")
+    terms_accepted_at = models.DateTimeField(null=True, blank=True, verbose_name="Termos Aceites Em")
+    privacy_policy_accepted_at = models.DateTimeField(null=True, blank=True, verbose_name="Política de Privacidade Aceite Em")
 
     def __str__(self): return self.user.username
     class Meta:

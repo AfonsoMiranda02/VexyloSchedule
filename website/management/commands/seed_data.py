@@ -13,10 +13,28 @@ class Command(BaseCommand):
 
         self.stdout.write("A iniciar injeção de dados iniciais automatizados...")
 
-        # 2. Criar Superuser
-        if not User.objects.filter(username='admin').exists():
-            User.objects.create_superuser('admin', 'admin@vexyloschedule.com', 'admin')
-            self.stdout.write(self.style.SUCCESS('Superuser "admin" criado com sucesso (password: admin)!'))
+        # 2. Criar Superuser (Apenas se explicitamente solicitado via variáveis de ambiente seguras)
+        import os
+        create_su = os.getenv('CREATE_INITIAL_SUPERUSER', 'false').lower() in ('true', '1', 't')
+        if create_su:
+            su_user = os.getenv('INITIAL_SUPERUSER_USERNAME')
+            su_email = os.getenv('INITIAL_SUPERUSER_EMAIL', 'admin@vexyloschedule.com')
+            su_pass = os.getenv('INITIAL_SUPERUSER_PASSWORD')
+            
+            if su_user and su_pass and su_pass != 'admin' and len(su_pass) >= 8:
+                if not User.objects.filter(username=su_user).exists():
+                    User.objects.create_superuser(su_user, su_email, su_pass)
+                    self.stdout.write(self.style.SUCCESS(f'Superuser "{su_user}" criado com sucesso a partir de variáveis de ambiente.'))
+                else:
+                    self.stdout.write(f'Superuser "{su_user}" já existe.')
+            else:
+                self.stdout.write(self.style.WARNING(
+                    'AVISO: CREATE_INITIAL_SUPERUSER=true foi configurado, mas as variáveis '
+                    'INITIAL_SUPERUSER_USERNAME e INITIAL_SUPERUSER_PASSWORD (mínimo 8 carateres, diferente de "admin") '
+                    'não foram devidamente fornecidas. Nenhum superuser foi criado.'
+                ))
+        else:
+            self.stdout.write('Criação de superuser omitida (para criar um superuser no arranque, defina CREATE_INITIAL_SUPERUSER=true com credenciais fortes).')
 
         # 3. Business Info
         if not BusinessInfo.objects.exists():

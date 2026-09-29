@@ -1,52 +1,61 @@
 import os
-import secrets
 import dj_database_url
 from dotenv import load_dotenv
 from pathlib import Path
+from django.core.exceptions import ImproperlyConfigured
 
 load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
-def get_or_create_secret_key():
-    env_key = os.getenv('SECRET_KEY')
-    if env_key:
-        return env_key
-    
-    secret_file = BASE_DIR / ".secret_key"
-    if secret_file.exists():
-        with open(secret_file, 'r', encoding='utf-8') as f:
-            key = f.read().strip()
-            if key:
-                return key
-                
-    new_key = secrets.token_urlsafe(50)
-    try:
-        with open(secret_file, 'w', encoding='utf-8') as f:
-            f.write(new_key)
-    except IOError:
-        pass
-    return new_key
+# 1. PARSING ROBUSTO DE DEBUG - Fails safe para False por omissão
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
 
-SECRET_KEY = get_or_create_secret_key()
+# 2. SECRET_KEY FAIL-SAFE
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        # Fallback local apenas para desenvolvimento ativo
+        SECRET_KEY = 'django-insecure-local-dev-key-vexylo-schedule-not-for-production'
+    else:
+        raise ImproperlyConfigured("CRÍTICO: A variável de ambiente SECRET_KEY é obrigatória em ambiente de produção (DEBUG=False).")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = (os.getenv('DEBUG') or 'True') == 'True'
+# 3. ALLOWED_HOSTS & HOST CANÓNICO
+raw_allowed_hosts = os.getenv('ALLOWED_HOSTS', os.getenv('DJANGO_ALLOWED_HOSTS', ''))
+if raw_allowed_hosts:
+    ALLOWED_HOSTS = [h.strip() for h in raw_allowed_hosts.split(',') if h.strip()]
+else:
+    if DEBUG:
+        ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]']
+    else:
+        ALLOWED_HOSTS = ['.onrender.com', 'localhost', '127.0.0.1']
 
-ALLOWED_HOSTS = ['*', 'localhost', '127.0.0.1', '.onrender.com']
+# Adicionar testserver durante testes automatizados
+import sys
+if 'test' in sys.argv or os.getenv('DJANGO_TEST') == 'true':
+    if 'testserver' not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append('testserver')
+
+if not DEBUG and '*' in ALLOWED_HOSTS:
+    raise ImproperlyConfigured("SEGURANÇA: O wildcard '*' é proibido em ALLOWED_HOSTS em produção para prevenir envenenamento de cabeçalho Host.")
+
+CANONICAL_HOST = os.getenv('CANONICAL_HOST')
 
 # Suporte para Reverse Proxy em serviços na nuvem (evita falhas de CSRF / Login em HTTPS)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-CSRF_TRUSTED_ORIGINS = [
-    'https://*.onrender.com',
-    'http://localhost:5010',
-    'http://127.0.0.1:5010',
-    'http://localhost:8000',
-    'http://127.0.0.1:8000'
-]
+raw_csrf_origins = os.getenv('CSRF_TRUSTED_ORIGINS', '')
+if raw_csrf_origins:
+    CSRF_TRUSTED_ORIGINS = [o.strip() for o in raw_csrf_origins.split(',') if o.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://*.onrender.com',
+        'http://localhost:5010',
+        'http://127.0.0.1:5010',
+        'http://localhost:8000',
+        'http://127.0.0.1:8000'
+    ]
 
 # Application definition
 INSTALLED_APPS = [
@@ -88,8 +97,8 @@ SOCIALACCOUNT_PROVIDERS = {
             'prompt': 'select_account',
         },
         'APP': {
-            'client_id': os.environ.get('GOOGLE_CLIENT_ID'),
-            'secret': os.environ.get('GOOGLE_CLIENT_SECRET'),
+            'client_id': os.environ.get('GOOGLE_CLIENT_ID', ''),
+            'secret': os.environ.get('GOOGLE_CLIENT_SECRET', ''),
             'key': ''
         }
     }
@@ -127,13 +136,33 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-DATABASES = {
-    'default': dj_database_url.config(
-        default=os.getenv('DATABASE_URL') or f'sqlite:///{BASE_DIR / "db.sqlite3"}',
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
-}
+# 4. DATABASE FAIL-SAFE CONFIGURATION
+database_url = os.getenv('DATABASE_URL')
+if 'test' in sys.argv and not os.getenv('USE_REAL_POSTGRES_TESTS'):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': ':memory:',
+        }
+    }
+elif not database_url:
+    if DEBUG:
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': BASE_DIR / 'db.sqlite3',
+            }
+        }
+    else:
+        raise ImproperlyConfigured("CRÍTICO: A variável de ambiente DATABASE_URL é obrigatória em ambiente de produção (DEBUG=False).")
+else:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            database_url,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
@@ -155,30 +184,35 @@ STATICFILES_DIRS = [
     BASE_DIR / "static",
 ]
 
-if os.getenv('EMAIL_HOST_USER'):
+# 5. CONFIGURAÇÃO DE EMAIL FAIL-SAFE
+if os.getenv('EMAIL_HOST_USER') and os.getenv('EMAIL_HOST_PASSWORD'):
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
     EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
-    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'vexyloSchedule@support.com')
+    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
     EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
-    EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
-    EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False') == 'True'
+    EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't')
+    EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False').lower() in ('true', '1', 't')
     DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
     EMAIL_TIMEOUT = 10
 else:
-    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    if DEBUG:
+        EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    else:
+        EMAIL_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
 
-LOGIN_URL = '/accounts/login/'
+LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/dashboard/'
 LOGOUT_REDIRECT_URL = '/'
-SOCIALACCOUNT_LOGIN_ON_GET = True
-ACCOUNT_EMAIL_VERIFICATION = 'none'
 
-# Bypass signup form for social accounts
+# 6. ALLAUTH HARDENING
+SOCIALACCOUNT_LOGIN_ON_GET = False
+ACCOUNT_EMAIL_VERIFICATION = 'none'
 SOCIALACCOUNT_AUTO_SIGNUP = True
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 ACCOUNT_LOGIN_METHODS = {'email', 'username'}
-SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = False
+ACCOUNT_LOGOUT_ON_GET = False
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -191,7 +225,6 @@ JAZZMIN_SETTINGS = {
     "show_sidebar": True,
     "navigation_expanded": True,
     
-    # Menu Rápido de Topo
     "topmenu_links": [
         {"name": "Início",  "url": "admin:index", "permissions": ["auth.view_user"]},
         {"name": "Ver Site", "url": "/", "new_window": True},
@@ -200,11 +233,9 @@ JAZZMIN_SETTINGS = {
         {"name": "Nova Categoria", "url": "admin:website_servicecategory_add", "permissions": ["website.add_servicecategory"], "icon": "fas fa-tags"},
     ],
 
-    # Esconder modelos não utilizados
     "hide_models": ["auth.Group"],
     "hide_apps": ["account", "socialaccount", "sites"],
     
-    # Ordem do menu lateral
     "order_with_respect_to": [
         "website.utilizador",
         "website.appointment",
@@ -237,11 +268,58 @@ JAZZMIN_UI_TWEAKS = {
     "theme": "litera",
 }
 
-# Segurança em Produção (só aplica no Render)
-if os.getenv('RENDER'):
+# 7. SEGURANÇA E SSL EM PRODUÇÃO (Render ou not DEBUG)
+is_running_tests = 'test' in sys.argv or os.getenv('DJANGO_TEST') == 'true'
+
+if (os.getenv('RENDER') or (not DEBUG and os.getenv('SECURE_SSL_REDIRECT', 'True').lower() in ('true', '1', 't'))) and not is_running_tests:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 31536000 # 1 year
+    SECURE_HSTS_SECONDS = 31536000 # 1 ano
     SECURE_HSTS_PRELOAD = True
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+else:
+    SECURE_SSL_REDIRECT = False
+
+
+# 8. LOGGING ESTRUTURADO
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {
+            'format': '[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s',
+            'datefmt': '%Y-%m-%d %H:%M:%S'
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': os.getenv('LOG_LEVEL', 'INFO'),
+    },
+    'loggers': {
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'django.security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'website': {
+            'handlers': ['console'],
+            'level': os.getenv('LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+    },
+}

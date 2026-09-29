@@ -1,0 +1,75 @@
+name: VexyloSchedule CI / CD Quality Gate
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: test_vexylo
+          POSTGRES_USER: vexylo_user
+          POSTGRES_PASSWORD: vexylo_secure_password_123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout Código Fonte
+      uses: actions/checkout@v4
+
+    - name: Configurar Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Instalar Dependências
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Verificação de Integridade do Django (System Check)
+      env:
+        DEBUG: "False"
+        SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
+        DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
+        ALLOWED_HOSTS: "localhost,127.0.0.1"
+      run: |
+        python manage.py check
+
+    - name: Verificação de Segurança para Deploy
+      env:
+        DEBUG: "False"
+        SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
+        DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
+        ALLOWED_HOSTS: "localhost,127.0.0.1"
+        SECURE_SSL_REDIRECT: "False"
+      run: |
+        python manage.py check --deploy
+
+    - name: Validar se todas as migrações foram geradas
+      env:
+        DEBUG: "True"
+        SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
+      run: |
+        python manage.py makemigrations --check --dry-run
+
+    - name: Executar Testes Automatizados
+      env:
+        DEBUG: "True"
+        SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
+        DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
+      run: |
+        python manage.py test
