@@ -26,8 +26,9 @@ def check_and_update_data(apps, schema_editor):
             f"a criação do índice único insensível a maiúsculas: {dup_list}."
         )
 
-    # 2. Preservar configurações explícitas de horário: nunca sobrescrever escolhas do administrador
-    pass
+    # 2. Issue 22: Quarta-feira (weekday=2) e Domingo (weekday=6) encerrados por omissão
+    # para preservar o comportamento histórico do negócio
+    BusinessOpeningHours.objects.filter(weekday__in=[2, 6]).update(is_open=False)
 
 
 class Migration(migrations.Migration):

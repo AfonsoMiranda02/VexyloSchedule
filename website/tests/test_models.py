@@ -1,6 +1,6 @@
 from decimal import Decimal
 from datetime import date, time
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.core.exceptions import ValidationError
 from django.db.models.deletion import ProtectedError
 from django.contrib.auth.models import User
@@ -257,7 +257,7 @@ class ModelInvariantsAndHistoryTests(TestCase):
         User.objects.create_superuser(username='super_existente', password='Password123!')
 
         # 1. Primeira execução: mesmo com superuser existente, deve criar a empresa e serviços
-        call_command('seed_data')
+        call_command('seed_data', with_demo=True)
         self.assertEqual(BusinessInfo.objects.count(), 1)
         self.assertEqual(BusinessOpeningHours.objects.count(), 7)
         self.assertGreater(Service.objects.count(), 0)
@@ -272,7 +272,7 @@ class ModelInvariantsAndHistoryTests(TestCase):
         }
 
         # 2. Segunda execução imediata: idempotência estrita (nada é duplicado)
-        call_command('seed_data')
+        call_command('seed_data', with_demo=True)
         counts_second = {
             'business': BusinessInfo.objects.count(),
             'hours': BusinessOpeningHours.objects.count(),
@@ -286,7 +286,7 @@ class ModelInvariantsAndHistoryTests(TestCase):
         BusinessOpeningHours.objects.filter(weekday__in=[2, 4]).delete()
         self.assertEqual(BusinessOpeningHours.objects.count(), 5)
 
-        call_command('seed_data')
+        call_command('seed_data', with_demo=True)
         self.assertEqual(BusinessOpeningHours.objects.count(), 7)
 
     def test_production_cache_smoke_crud_and_timeout(self):
@@ -311,3 +311,53 @@ class ModelInvariantsAndHistoryTests(TestCase):
         # 3. Timeout / Expiração
         pytime.sleep(1.1)
         self.assertIsNone(cache.get(test_key))
+
+    @override_settings(DEBUG=False)
+    def test_production_seeder_does_not_create_fake_services_or_staff(self):
+        """Em modo de produção (DEBUG=False), o seed_data nunca cria serviços ou profissionais falsos."""
+        from django.core.management import call_command
+        BusinessInfo.objects.all().delete()
+        Service.objects.all().delete()
+        ServiceCategory.objects.all().delete()
+        StaffMember.objects.all().delete()
+
+        call_command('seed_data')
+
+        # Em produção sem variáveis, não inventa catálogo nem staff
+        self.assertEqual(Service.objects.count(), 0)
+        self.assertEqual(StaffMember.objects.count(), 0)
+
+    def test_migration_0007_preserves_custom_admin_opening_hours(self):
+        """Garante que a nova migração 0007 não sobrescreve escolhas explícitas de horários do administrador."""
+        business = BusinessInfo.objects.first()
+        if not business:
+            business = BusinessInfo.objects.create(name="Empresa Teste", phone="900000000", schedule="Horário")
+
+        # Administrador configurou expressamente quarta-feira (2) como ABERTA
+        wed, _ = BusinessOpeningHours.objects.get_or_create(
+            business=business,
+            weekday=2,
+            defaults={'is_open': True, 'opening_time': time(9, 0), 'closing_time': time(19, 0)}
+        )
+        wed.is_open = True
+        wed.save()
+
+        import importlib
+        mig_mod = importlib.import_module("website.migrations.0007_preserve_opening_hours_admin_choices")
+        from django.apps import apps
+        mig_mod.preserve_admin_opening_hours(apps, None)
+
+        wed.refresh_from_db()
+        self.assertTrue(wed.is_open, "A escolha do administrador para quarta-feira aberta deve ser estritamente preservada!")
+
+    def test_verify_production_ready_command_semantics(self):
+        """Validação do comportamento e categorias do comando verify_production_ready."""
+        from io import StringIO
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command('verify_production_ready', stdout=out)
+        output_str = out.getvalue()
+        self.assertIn("A verificar integridade e prontidão de produção", output_str)
+        self.assertIn("[1/2] Verificação da Infraestrutura Técnica:", output_str)
+        self.assertIn("[2/2] Verificação da Configuração de Negócio:", output_str)

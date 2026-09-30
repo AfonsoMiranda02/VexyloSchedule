@@ -11,6 +11,13 @@ from website.models import BusinessInfo, BusinessOpeningHours, ServiceCategory, 
 class Command(BaseCommand):
     help = 'Injeta os dados base caso a base de dados esteja vazia, de forma idempotente e segura por componente.'
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--with-demo',
+            action='store_true',
+            help='Injeta catálogo de serviços e profissionais de demonstração (permitido apenas em DEBUG=True ou com esta flag explícita).'
+        )
+
     def handle(self, *args, **kwargs):
         self.stdout.write("A iniciar verificação e inicialização de dados base...")
 
@@ -48,68 +55,86 @@ class Command(BaseCommand):
             # 2. Business Info
             business = BusinessInfo.objects.first()
             if not business:
-                is_prod = not settings.DEBUG
-                default_name = os.getenv('DEFAULT_BUSINESS_NAME', 'VexyloSchedule' if is_prod else 'Salão & Estética Demo')
-                default_addr = os.getenv('DEFAULT_BUSINESS_ADDRESS', 'Morada a Configurar' if is_prod else 'Avenida Central, 100')
-                default_phone = os.getenv('DEFAULT_BUSINESS_PHONE', '900000000')
-                default_email = os.getenv('DEFAULT_BUSINESS_EMAIL', 'contacto@dominio.pt' if is_prod else 'contacto@vexyloschedule.com')
-
-                business = BusinessInfo.objects.create(
-                    name=default_name,
-                    address=default_addr,
-                    phone=default_phone,
-                    whatsapp=default_phone,
-                    email=default_email,
-                    schedule="Segunda a Sábado (Quarta e Domingo encerrado): 09:00 - 19:00",
-                    description="Solução de marcações online moderna e rápida."
-                )
-                self.stdout.write(self.style.SUCCESS(f'BusinessInfo criada: "{business.name}".'))
+                if settings.DEBUG or kwargs.get('with_demo'):
+                    business = BusinessInfo.objects.create(
+                        name="Salão & Barbearia Demo",
+                        address="Avenida Central, 100",
+                        phone="912345678",
+                        whatsapp="912345678",
+                        email="contacto@barbeariademo.pt",
+                        schedule="Segunda a Sábado (Quarta e Domingo encerrado): 09:00 - 19:00",
+                        description="Solução de marcações online moderna e rápida."
+                    )
+                    self.stdout.write(self.style.SUCCESS(f'BusinessInfo criada: "{business.name}".'))
+                else:
+                    # Em produção (DEBUG=False): Nunca inventar moradas ou números falsos
+                    init_name = os.getenv('INITIAL_BUSINESS_NAME')
+                    if init_name:
+                        business = BusinessInfo.objects.create(
+                            name=init_name,
+                            address=os.getenv('INITIAL_BUSINESS_ADDRESS', ''),
+                            phone=os.getenv('INITIAL_BUSINESS_PHONE', ''),
+                            whatsapp=os.getenv('INITIAL_BUSINESS_WHATSAPP', os.getenv('INITIAL_BUSINESS_PHONE', '')),
+                            email=os.getenv('INITIAL_BUSINESS_EMAIL', ''),
+                            schedule=os.getenv('INITIAL_BUSINESS_SCHEDULE', 'Segunda a Sábado: 09:00 - 19:00'),
+                            description=os.getenv('INITIAL_BUSINESS_DESCRIPTION', '')
+                        )
+                        self.stdout.write(self.style.SUCCESS(f'BusinessInfo configurada via variáveis de ambiente: "{business.name}".'))
+                    else:
+                        self.stdout.write(self.style.NOTICE(
+                            'BusinessInfo não configurada. Em produção, os dados reais do estabelecimento devem '
+                            'ser introduzidos no Painel de Administração ou via INITIAL_BUSINESS_*.'
+                        ))
             else:
                 self.stdout.write(f'BusinessInfo já configurada: "{business.name}".')
 
-            # 3. Horários Estruturados (7 dias garantidos: Quarta=2 e Domingo=6 encerrados por omissão)
-            created_hours = 0
-            for w in range(7):
-                is_open = (w not in (2, 6))
-                _, created = BusinessOpeningHours.objects.get_or_create(
-                    business=business,
-                    weekday=w,
-                    defaults={
-                        'is_open': is_open,
-                        'opening_time': "09:00:00",
-                        'closing_time': "19:00:00",
-                        'lunch_start': "13:00:00",
-                        'lunch_end': "14:00:00"
-                    }
-                )
-                if created:
-                    created_hours += 1
+            # 3. Horários Estruturados (7 dias garantidos se a empresa existir)
+            if business:
+                created_hours = 0
+                for w in range(7):
+                    is_open = (w not in (2, 6))
+                    _, created = BusinessOpeningHours.objects.get_or_create(
+                        business=business,
+                        weekday=w,
+                        defaults={
+                            'is_open': is_open,
+                            'opening_time': "09:00:00",
+                            'closing_time': "19:00:00",
+                            'lunch_start': "13:00:00",
+                            'lunch_end': "14:00:00"
+                        }
+                    )
+                    if created:
+                        created_hours += 1
 
-            if created_hours > 0:
-                self.stdout.write(self.style.SUCCESS(f'{created_hours} dias de funcionamento criados para a empresa.'))
+                if created_hours > 0:
+                    self.stdout.write(self.style.SUCCESS(f'{created_hours} dias de funcionamento criados para a empresa.'))
+                else:
+                    self.stdout.write('Horários de funcionamento já se encontram completos (7 dias).')
+
+            # 4. Categorias e Serviços
+            if settings.DEBUG or kwargs.get('with_demo'):
+                if not ServiceCategory.objects.exists() and not Service.objects.exists():
+                    cat_cabelo = ServiceCategory.objects.create(name="Cabelo", order=1)
+                    cat_barba = ServiceCategory.objects.create(name="Barba", order=2)
+                    cat_combos = ServiceCategory.objects.create(name="Combos", order=3)
+
+                    Service.objects.create(category=cat_cabelo, name="Corte Tradicional", price=15.00, duration=30, is_active=True)
+                    Service.objects.create(category=cat_cabelo, name="Corte Degradê / Fade", price=18.00, duration=45, is_active=True)
+                    Service.objects.create(category=cat_barba, name="Barba Completa com Toalha Quente", price=12.00, duration=30, is_active=True)
+                    Service.objects.create(category=cat_combos, name="Cabelo + Barba VIP", price=25.00, duration=60, is_active=True)
+                    self.stdout.write(self.style.SUCCESS('Categorias e serviços de demonstração criados.'))
+                else:
+                    self.stdout.write('Catálogo de serviços já contém dados existentes.')
+
+                # 5. Profissionais
+                if not StaffMember.objects.exists():
+                    StaffMember.objects.create(name="Alexandre Silva", role="Master Barber", is_active=True)
+                    StaffMember.objects.create(name="Diogo Costa", role="Especialista em Fade", is_active=True)
+                    self.stdout.write(self.style.SUCCESS('Profissionais de demonstração criados.'))
+                else:
+                    self.stdout.write('Membros da equipa já existentes.')
             else:
-                self.stdout.write('Horários de funcionamento já se encontram completos (7 dias).')
-
-            # 4. Categorias e Serviços Base
-            if not ServiceCategory.objects.exists() and not Service.objects.exists():
-                cat_cabelo = ServiceCategory.objects.create(name="Cabelo", order=1)
-                cat_barba = ServiceCategory.objects.create(name="Barba", order=2)
-                cat_combos = ServiceCategory.objects.create(name="Combos", order=3)
-
-                Service.objects.create(category=cat_cabelo, name="Corte Tradicional", price=15.00, duration=30, is_active=True)
-                Service.objects.create(category=cat_cabelo, name="Corte Degradê / Fade", price=18.00, duration=45, is_active=True)
-                Service.objects.create(category=cat_barba, name="Barba Completa com Toalha Quente", price=12.00, duration=30, is_active=True)
-                Service.objects.create(category=cat_combos, name="Cabelo + Barba VIP", price=25.00, duration=60, is_active=True)
-                self.stdout.write(self.style.SUCCESS('Categorias e serviços base criados.'))
-            else:
-                self.stdout.write('Catálogo de serviços já contém dados existentes.')
-
-            # 5. Profissionais Base
-            if not StaffMember.objects.exists():
-                StaffMember.objects.create(name="Alexandre Silva", role="Master Barber", is_active=True)
-                StaffMember.objects.create(name="Diogo Costa", role="Especialista em Fade", is_active=True)
-                self.stdout.write(self.style.SUCCESS('Profissionais base criados.'))
-            else:
-                self.stdout.write('Membros da equipa já existentes.')
+                self.stdout.write('Em produção, o catálogo de serviços e profissionais não é inventado automaticamente (omitidos para segurança).')
 
         self.stdout.write(self.style.SUCCESS('Dados base verificados/inicializados com sucesso.'))

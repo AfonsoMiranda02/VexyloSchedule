@@ -435,3 +435,113 @@ Este ficheiro documenta detalhadamente todos os prompts recebidos, as ações to
    - `npm ci; npm run build:css`: Tailwind compilado em 544ms com zero vulnerabilidades.
    - `pip check`: `No broken requirements found.`
    - `python manage.py collectstatic --noinput`: Concluído com sucesso (512 ficheiros pós-processados).
+
+---
+
+## [2026-09-30] Correção de CI, Segurança de Migrações e Verdade de Produção
+
+### Prompt do Utilizador:
+> # VexyloSchedule — FINAL CI REPAIR, MIGRATION SAFETY & PRODUCTION TRUTH PASS
+> Correção dos 2 testes falhados no CI GitHub (`test_password_reset_forces_canonical_host_even_if_alternative_host_used` e `test_password_reset_sends_exactly_one_email_and_uses_trusted_host`).
+> Alinhamento da precedência de `APP_BASE_URL` vs `CANONICAL_HOST`, validação fail-fast de HTTPS em produção para `APP_BASE_URL`, preservação histórica de migrações sem editar migrações passadas aplicadas (restauro da 0005 e criação da 0007), testes com `MigrationExecutor`, separação de dados de bootstrap seguro (`seed_data`) e dados de demonstração (`seed_demo_data`), prevenção de enumeração de contas em falhas SMTP, invariantes de agendamento administrativo (rejeição de datas passadas e serviços inativos em novas marcações; preservação de histórico em edições), semântica estrita de `verify_production_ready` com categorias de infraestrutura vs negócio, correção da documentação do `entrypoint.sh` no README (sem `close_past_appointments` no arranque) e alinhamento do `.env.example`.
+
+---
+
+### Diagnóstico e Causa-Raiz das Falhas no CI:
+1. **Conflito de Precedência entre `APP_BASE_URL` e `CANONICAL_HOST`:**
+   O workflow de CI do GitHub definia globalmente `APP_BASE_URL=http://localhost:8000`. O código de `CustomPasswordResetView` dava prioridade a `APP_BASE_URL` sobre `CANONICAL_HOST`. Os testes utilizavam `@override_settings(CANONICAL_HOST=...)`, pelo que o link de redefinição continuava a ser gerado com `http://localhost:8000`, provocando a falha de 2 asserções no runner do GitHub.
+2. **Reescrita Insegura de Histórico de Migrações:**
+   A migração `0005` tinha sido anteriormente alterada in-place substituindo operações executadas por `pass`, criando histórico divergente caso tivesse sido aplicada em qualquer ambiente.
+3. **Falso Positivo de Prontidão de Negócio:**
+   O comando `verify_production_ready` reportava sucesso global mesmo quando `BusinessInfo` e horários estavam por configurar, sem distinguir prontidão técnica de prontidão funcional.
+
+---
+
+### Ações e Ficheiros Modificados:
+
+#### 1. Configuração Fail-Fast e Fonte Canónica Única (`APP_BASE_URL`)
+- **Ficheiro modificado:** `core/settings.py` (linhas 42 a 75)
+  - `APP_BASE_URL` estabelecido como fonte canónica única para URLs externos gerados pela aplicação.
+  - Quando `DEBUG=False`: a ausência de `APP_BASE_URL` ou esquema diferente de `https://` dispara `ImproperlyConfigured`.
+  - `CANONICAL_HOST` mantido apenas para compatibilidade legada e derivado automaticamente de `APP_BASE_URL`.
+- **Ficheiro modificado:** `.github/workflows/ci.yml` (linhas 45 a 135)
+  - Passos de produção atualizados de `http://localhost:8000` para `https://vexylo-ci.example`.
+  - Execução de `verify_production_ready` atualizada com flags estritas `--require-postgres --require-db-cache`.
+- **Ficheiro modificado:** `.env.example` (linhas 10 a 20 e 35 a 40)
+  - `APP_BASE_URL=https://yourdomain.com` documentado como obrigatório em produção.
+  - `CANONICAL_HOST` anotado como descontinuado.
+  - Adicionadas variáveis `TRUST_PROXY_HEADERS` e `DISABLE_EMAIL_IN_PROD`.
+
+#### 2. Restauro de Histórico de Migrações e Migração Corretiva 0007
+- **Ficheiro restaurado:** `website/migrations/0005_remove_businessinfo_business_cancel_limit_positive_and_more.py` (linhas 30 a 35)
+  - Restaurada a versão histórica original com a operação `BusinessOpeningHours.objects.filter(weekday__in=[2, 6]).update(is_open=False)`.
+- **Ficheiro criado:** `website/migrations/0007_preserve_opening_hours_admin_choices.py` (linhas 1 a 28)
+  - Nova migração que preserva escolhas explícitas do administrador sem sobreposições destrutivas.
+- **Ficheiro criado:** `website/tests/test_migrations.py` (linhas 1 a 64)
+  - Testes com `MigrationExecutor` validando reversão para 0004/0005 e avanço para 0007 sem quebra de integridade ou destruição de escolhas de horários.
+
+#### 3. Separação de Bootstrap de Produção e Dados de Demonstração
+- **Ficheiro modificado:** `website/management/commands/seed_data.py` (linhas 15 a 145)
+  - Em produção (`DEBUG=False` sem `--with-demo`), o comando nunca inventa serviços, preços, profissionais fictícios ou contactos placeholder.
+  - Criação de profissionais e catálogo segregada para flag `--with-demo`.
+- **Ficheiro criado:** `website/management/commands/seed_demo_data.py` (linhas 1 a 35)
+  - Comando específico para ambientes de teste e desenvolvimento que popula o catálogo e equipa de demonstração.
+- **Ficheiro modificado:** `website/models.py` (linhas 30 a 45)
+  - `BusinessInfo.get_solo()` atualizado para não expor números e moradas fictícias quando `DEBUG=False`.
+
+#### 4. Anti-Enumeração de Contas e Proteção Operacional de Email
+- **Ficheiro modificado:** `website/views.py` (linhas 505 a 555)
+  - Em `CustomPasswordResetView`, falhas operacionais SMTP são registadas com `logger.exception()` sem retornar HTTP 500, redirecionando para `password_reset_done` com o mesmo comportamento/shape de emails inexistentes.
+  - Rota de recuperação bloqueada se `EMAIL_CONFIGURED` for falso em produção.
+  - Tratamento de `IntegrityError` em `register_view` direcionado a restrições conhecidas (`unique_user_email_ci`, `auth_user_username_key`).
+
+#### 5. Invariantes de Agendamento no Django Admin
+- **Ficheiro modificado:** `website/services/booking.py` (linhas 440 a 490)
+  - `save_admin_appointment`: Em NOVAS marcações, rejeita datas passadas (`InvalidSlotError`) e serviços inativos (`InvalidServiceError`). Em edições de marcações existentes, permite histórico e recalcula snapshots (`service_name_at_booking`, `price_at_booking`, `duration_at_booking`) quando o serviço é explicitamente alterado.
+- **Ficheiro modificado:** `website/forms.py` (linhas 45 a 65)
+  - `AppointmentAdminForm.clean`: Validação de data/hora no passado para novas marcações no painel de administração.
+- **Ficheiro modificado:** `website/tests/test_booking.py` (linhas 250 a 360)
+  - Adicionados testes específicos para rejeição de passado em novas marcações, permissão de edição em histórico, rejeição de serviço inativo e atualização de snapshots em troca de serviço.
+
+#### 6. Semântica Estrita de Verificação de Prontidão (`verify_production_ready`)
+- **Ficheiro modificado:** `website/management/commands/verify_production_ready.py` (linhas 15 a 193)
+  - Saída dividida claramente em `[1/2] Verificação da Infraestrutura Técnica` e `[2/2] Verificação da Configuração de Negócio`.
+  - Inspeção do backend ativo através de `caches['default']` para confirmar `DatabaseCache` real sob `--require-db-cache`.
+  - Terminação com código de erro não-zero quando requisitos impeditivos falham.
+  - Nenhuma credencial sensível (passwords, secrets) é impressa no output.
+
+#### 7. Testes de Autenticação e Configuração Canónica
+- **Ficheiro modificado:** `website/tests/test_auth.py` (linhas 140 a 240)
+  - Atualizados testes de recuperação de password para substituir `APP_BASE_URL` em conformidade com a nova arquitetura.
+  - Adicionados testes para cenários de anti-enumeração em falha SMTP e validação de configurações de `APP_BASE_URL` (HTTPS obrigatório quando `DEBUG=False`).
+- **Ficheiro modificado:** `website/tests/test_concurrency.py` (linhas 25 a 35)
+  - Verificação estrita de PostgreSQL quando `CI_POSTGRES_REQUIRED=true`.
+
+#### 8. Correção de Documentação (`README.md`)
+- **Ficheiro modificado:** `README.md` (linhas 45 a 185)
+  - Removido `close_past_appointments` da descrição do `entrypoint.sh` (esclarecendo que é executado exclusivamente via cron/tarefas agendadas).
+  - Tabela de variáveis de ambiente atualizada para evidenciar `APP_BASE_URL` como obrigatório e `CANONICAL_HOST` como descontinuado.
+  - Total de testes atualizado para 77.
+  - Explicação clarificada da diferença entre `seed_data` e `seed_demo_data`.
+
+---
+
+### Resultados Locais Verificados:
+
+1. **Suite Completa de Testes Django (77 testes):**
+   - Comando: `$env:APP_BASE_URL="https://vexylo-ci.example"; python manage.py test`
+   - **Resultado:** `Ran 77 tests in 40.793s — OK (Todos os 77 testes passaram com sucesso).`
+2. **Testes de Migração com MigrationExecutor:**
+   - Comando: `python manage.py test website.tests.test_migrations`
+   - **Resultado:** `Ran 2 tests in 0.372s — OK.`
+3. **Verificação de Prontidão de Produção:**
+   - Comando: `python manage.py verify_production_ready --require-postgres --require-db-cache`
+   - **Resultado:** Código 0, backend `django.core.cache.backends.db.DatabaseCache` confirmado, conexão PostgreSQL confirmada, todos os checks com sucesso.
+4. **Verificações Django e Deploy:**
+   - `python manage.py check`: `System check identified no issues (0 silenced).`
+   - `python manage.py check --deploy --fail-level WARNING`: `System check identified no issues (0 silenced).`
+   - `python manage.py makemigrations --check --dry-run`: `No changes detected.`
+5. **Frontend e Estáticos:**
+   - `npm run build:css`: Reconstruído em 337ms.
+   - `python manage.py collectstatic --noinput`: 512 ficheiros estáticos processados com sucesso.
+

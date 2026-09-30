@@ -333,6 +333,26 @@ class BookingService:
             if is_new and not staff:
                 raise StaffUnavailableError("É obrigatório atribuir um profissional a novas marcações.")
 
+            # Validação de serviço ativo:
+            # Novas marcações rejeitam serviços inativos.
+            # Se uma marcação existente alterar o serviço, o novo serviço também deve estar ativo.
+            old_inst = None
+            if not is_new:
+                old_inst = Appointment.objects.filter(pk=appointment.pk).first()
+
+            if is_new and not service.is_active:
+                raise InvalidSlotError("O serviço selecionado não se encontra ativo para novas marcações.")
+            if old_inst and old_inst.service_id != service.id and not service.is_active:
+                raise InvalidSlotError("O novo serviço selecionado não se encontra ativo.")
+
+            # Validação de horário no passado para novas marcações
+            start_dt = datetime.combine(target_date, start_time)
+            if is_new:
+                current_tz = timezone.get_current_timezone()
+                start_dt_aware = timezone.make_aware(start_dt, current_tz)
+                if start_dt_aware < timezone.now():
+                    raise InvalidSlotError("Não é possível realizar novos agendamentos em horários passados.")
+
             # Se for um registo legado sem profissional, permite guardar
             if not staff:
                 appointment.save()
@@ -352,11 +372,8 @@ class BookingService:
                 raise InvalidSlotError(f"Os agendamentos devem iniciar em intervalos de {cls.SLOT_INTERVAL_MINUTES} minutos.")
 
             # Duração e snapshots:
-            # Se for nova ou o serviço foi alterado, atualiza snapshots do serviço atual
-            old_inst = None
-            if not is_new:
-                old_inst = Appointment.objects.filter(pk=appointment.pk).first()
-
+            # Regra de negócio explícita: A alteração de serviço no Admin constitui uma alteração formal
+            # de reserva, atualizando expressamente os snapshots do serviço, preço e duração.
             if is_new or (old_inst and old_inst.service_id != service.id):
                 duration = service.duration
                 appointment.service_name_at_booking = service.name
@@ -372,7 +389,6 @@ class BookingService:
                 if appointment.duration_at_booking is None:
                     appointment.duration_at_booking = duration
 
-            start_dt = datetime.combine(target_date, start_time)
             end_dt = start_dt + timedelta(minutes=duration)
 
             if end_dt.date() != target_date:

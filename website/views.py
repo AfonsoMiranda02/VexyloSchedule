@@ -74,9 +74,12 @@ def register_view(request):
                 return redirect('dashboard')
             except IntegrityError as exc:
                 err_msg = str(exc).lower()
-                if 'unique' in err_msg or 'email' in err_msg or 'username' in err_msg:
-                    logger.warning("Concorrência de registo detetada para email/username duplicado: %s", exc)
-                    form.add_error('email', "Este email já está registado.")
+                if 'unique_user_email_ci' in err_msg or ('auth_user' in err_msg and 'email' in err_msg):
+                    logger.warning("Concorrência de registo detetada para email duplicado: %s", exc)
+                    form.add_error('email', "Este email já se encontra registado.")
+                elif 'auth_user_username_key' in err_msg or ('auth_user' in err_msg and 'username' in err_msg):
+                    logger.warning("Concorrência de registo detetada para username duplicado: %s", exc)
+                    form.add_error('username', "Este nome de utilizador já se encontra em uso.")
                 else:
                     raise
     else:
@@ -500,7 +503,7 @@ class CustomPasswordResetView(auth_views.PasswordResetView):
     """
     def dispatch(self, request, *args, **kwargs):
         backend = getattr(settings, 'EMAIL_BACKEND', '')
-        if backend.endswith('dummy.EmailBackend'):
+        if backend.endswith('dummy.EmailBackend') or (not getattr(settings, 'EMAIL_CONFIGURED', True) and not settings.DEBUG):
             from django.http import HttpResponseServerError
             return HttpResponseServerError("O envio de emails está desativado nesta configuração.")
         return super().dispatch(request, *args, **kwargs)
@@ -544,7 +547,8 @@ class CustomPasswordResetView(auth_views.PasswordResetView):
         try:
             form.save(**opts)
         except Exception:
-            logger.exception("Falha de envio de email na recuperação de password")
-            from django.http import HttpResponseServerError
-            return HttpResponseServerError("Ocorreu um erro no servidor de correio ao tentar enviar o email de recuperação.")
+            logger.exception("Falha operacional no envio de email na recuperação de palavra-passe")
+            # Proteção estrita contra Enumeração de Contas:
+            # Nunca retorna HTTP 500 para não revelar se o endereço de email submetido existe ou não.
+            # O utilizador recebe sempre a resposta genérica de sucesso (redirecionamento para password_reset_done).
         return HttpResponseRedirect(self.get_success_url())

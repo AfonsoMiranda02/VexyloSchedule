@@ -87,6 +87,19 @@ class AppointmentAdminForm(forms.ModelForm):
         if not self.instance.pk and not staff_member:
             raise forms.ValidationError({'staff_member': "É obrigatório atribuir um profissional para novas marcações."})
 
+        # 0.0 Validação de serviço ativo para novas marcações (ou se alterado em edição)
+        if not self.instance.pk and not service.is_active:
+            raise forms.ValidationError({'service': "O serviço selecionado já não se encontra ativo para novas marcações."})
+        if self.instance.pk and self.instance.service_id != service.id and not service.is_active:
+            raise forms.ValidationError({'service': "O novo serviço selecionado não se encontra ativo."})
+
+        # 0.01 Validação de data/hora no passado para novas marcações
+        if not self.instance.pk:
+            current_tz = timezone.get_current_timezone()
+            start_dt_aware = timezone.make_aware(datetime.combine(target_date, start_time), current_tz)
+            if start_dt_aware < timezone.now():
+                raise forms.ValidationError({'time': "Não é possível realizar novos agendamentos em horários passados."})
+
         # 0.1 Validação de granularidade de slot (30 minutos)
         if (start_time.minute % BookingService.SLOT_INTERVAL_MINUTES != 0) or start_time.second != 0 or start_time.microsecond != 0:
             raise forms.ValidationError(

@@ -530,3 +530,113 @@ class BookingTests(TestCase):
         # Aceder à página de agendamento também deve responder com HTTP 200 sem erro
         response = self.client.get(reverse('book_appointment'))
         self.assertEqual(response.status_code, 200)
+
+    def test_admin_new_appointment_in_past_rejected(self):
+        """Novas marcações criadas pelo Admin em datas/horas passadas devem ser rejeitadas."""
+        past_date = timezone.localdate() - timedelta(days=2)
+        past_appt = Appointment(
+            user=self.user,
+            service=self.service_30,
+            staff_member=self.staff1,
+            date=past_date,
+            time=time(10, 0),
+            status='Confirmada'
+        )
+        with self.assertRaises(InvalidSlotError):
+            BookingService.save_admin_appointment(past_appt)
+
+        # Validação via AppointmentAdminForm
+        form_data = {
+            'user': self.user.id,
+            'service': self.service_30.id,
+            'staff_member': self.staff1.id,
+            'date': past_date,
+            'time': time(10, 0),
+            'status': 'Confirmada'
+        }
+        form = AppointmentAdminForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn('horários passados', str(form.errors))
+
+    def test_admin_historical_appointment_in_past_allowed(self):
+        """Marcações legadas no passado continuam a poder ser visualizadas e editadas no Admin sem bloqueio indevido."""
+        past_date = timezone.localdate() - timedelta(days=5)
+        historical_appt = Appointment.objects.create(
+            user=self.user,
+            service=self.service_30,
+            staff_member=self.staff1,
+            date=past_date,
+            time=time(10, 0),
+            end_time=time(10, 30),
+            status='Concluída',
+            service_name_at_booking='Corte Passado',
+            price_at_booking=Decimal('15.00'),
+            duration_at_booking=30
+        )
+        # Atualizar notas ou outro campo sem alterar data
+        historical_appt.cancellation_notes = "Inspeção histórica"
+        saved = BookingService.save_admin_appointment(historical_appt)
+        self.assertEqual(saved.cancellation_notes, "Inspeção histórica")
+
+    def test_admin_new_appointment_inactive_service_rejected(self):
+        """Novas marcações no Admin para serviços inativos devem ser rejeitadas."""
+        target_date = self.get_future_open_date()
+        inactive_service = Service.objects.create(
+            category=self.category,
+            name="Serviço Descontinuado",
+            price=Decimal('20.00'),
+            duration=30,
+            is_active=False
+        )
+
+        new_appt = Appointment(
+            user=self.user,
+            service=inactive_service,
+            staff_member=self.staff1,
+            date=target_date,
+            time=time(10, 0),
+            status='Confirmada'
+        )
+        with self.assertRaises(InvalidSlotError):
+            BookingService.save_admin_appointment(new_appt)
+
+        # Validação via Form
+        form_data = {
+            'user': self.user.id,
+            'service': inactive_service.id,
+            'staff_member': self.staff1.id,
+            'date': target_date,
+            'time': time(10, 0),
+            'status': 'Confirmada'
+        }
+        form = AppointmentAdminForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn('não se encontra ativo', str(form.errors))
+
+    def test_admin_service_change_updates_snapshots(self):
+        """
+        Alterar o serviço de uma marcação existente no Admin é uma alteração de agendamento explícita:
+        atualiza expressamente o snapshot de nome, preço, duração e recalcula o end_time.
+        """
+        target_date = self.get_future_open_date()
+        appt = Appointment.objects.create(
+            user=self.user,
+            service=self.service_30,
+            staff_member=self.staff1,
+            date=target_date,
+            time=time(10, 0),
+            end_time=time(10, 30),
+            service_name_at_booking='Corte 30m',
+            price_at_booking=Decimal('15.00'),
+            duration_at_booking=30,
+            status='Confirmada'
+        )
+
+        # Alterar o serviço para service_60 (60 minutos, 25€)
+        appt.service = self.service_60
+        saved = BookingService.save_admin_appointment(appt)
+
+        self.assertEqual(saved.service_name_at_booking, "Corte Completo 60m")
+        self.assertEqual(saved.price_at_booking, Decimal('25.00'))
+        self.assertEqual(saved.duration_at_booking, 60)
+        self.assertEqual(saved.end_time, time(11, 0))

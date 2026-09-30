@@ -40,17 +40,35 @@ if 'test' in sys.argv or os.getenv('DJANGO_TEST') == 'true':
 if not DEBUG and '*' in ALLOWED_HOSTS:
     raise ImproperlyConfigured("SEGURANÇA: O wildcard '*' é proibido em ALLOWED_HOSTS em produção para prevenir envenenamento de cabeçalho Host.")
 
-APP_BASE_URL = os.getenv('APP_BASE_URL', '').strip().rstrip('/')
-raw_canonical = os.getenv('CANONICAL_HOST', '').strip()
-if not raw_canonical and APP_BASE_URL:
-    from urllib.parse import urlparse
-    CANONICAL_HOST = urlparse(APP_BASE_URL).netloc or APP_BASE_URL
-else:
-    if '://' in raw_canonical:
-        from urllib.parse import urlparse
-        CANONICAL_HOST = urlparse(raw_canonical).netloc
+from urllib.parse import urlparse
+
+raw_app_base_url = os.getenv('APP_BASE_URL', '').strip().rstrip('/')
+if not raw_app_base_url:
+    if DEBUG:
+        APP_BASE_URL = 'http://localhost:8000'
     else:
-        CANONICAL_HOST = raw_canonical or None
+        raise ImproperlyConfigured(
+            "CRÍTICO DE PRODUÇÃO: A variável de ambiente APP_BASE_URL é obrigatória quando DEBUG=False "
+            "para garantir a integridade dos links externos e mitigar Host Header Poisoning."
+        )
+else:
+    parsed_base = urlparse(raw_app_base_url)
+    if not parsed_base.scheme or not parsed_base.netloc:
+        raise ImproperlyConfigured(
+            f"CONFIGURAÇÃO INVÁLIDA: APP_BASE_URL ('{raw_app_base_url}') deve conter um esquema e um domínio válidos (ex: https://dominio.pt)."
+        )
+    if not DEBUG and parsed_base.scheme != 'https':
+        raise ImproperlyConfigured(
+            f"SEGURANÇA: Em produção (DEBUG=False), APP_BASE_URL deve utilizar obrigatoriamente o protocolo seguro HTTPS ('{raw_app_base_url}' fornecido)."
+        )
+    APP_BASE_URL = raw_app_base_url
+
+# CANONICAL_HOST: Mantido temporariamente para retrocompatibilidade, derivado estritamente de APP_BASE_URL
+raw_canonical = os.getenv('CANONICAL_HOST', '').strip()
+if raw_canonical:
+    CANONICAL_HOST = urlparse(raw_canonical if '://' in raw_canonical else f'https://{raw_canonical}').netloc or raw_canonical
+else:
+    CANONICAL_HOST = urlparse(APP_BASE_URL).netloc or APP_BASE_URL
 
 # Suporte para Reverse Proxy em serviços na nuvem (evita falhas de CSRF / Login em HTTPS)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

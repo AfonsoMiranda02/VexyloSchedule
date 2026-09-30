@@ -56,8 +56,8 @@ jobs:
         DEBUG: "False"
         SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
         DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
-        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
-        APP_BASE_URL: "http://localhost:8000"
+        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver,vexylo-ci.example"
+        APP_BASE_URL: "https://vexylo-ci.example"
         EMAIL_HOST_USER: "ci-user@example.com"
         EMAIL_HOST_PASSWORD: "ci-password"
       run: |
@@ -69,20 +69,20 @@ jobs:
         DEBUG: "False"
         SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
         DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
-        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
-        APP_BASE_URL: "http://localhost:8000"
+        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver,vexylo-ci.example"
+        APP_BASE_URL: "https://vexylo-ci.example"
         EMAIL_HOST_USER: "ci-user@example.com"
         EMAIL_HOST_PASSWORD: "ci-password"
       run: |
-        python manage.py verify_production_ready
+        python manage.py verify_production_ready --require-postgres --require-db-cache
 
     - name: Verificação de Integridade de Ficheiros Estáticos (WhiteNoise Manifest)
       env:
         DEBUG: "False"
         SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
         DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
-        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
-        APP_BASE_URL: "http://localhost:8000"
+        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver,vexylo-ci.example"
+        APP_BASE_URL: "https://vexylo-ci.example"
         EMAIL_HOST_USER: "ci-user@example.com"
         EMAIL_HOST_PASSWORD: "ci-password"
       run: |
@@ -93,8 +93,8 @@ jobs:
         DEBUG: "False"
         SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
         DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
-        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
-        APP_BASE_URL: "http://localhost:8000"
+        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver,vexylo-ci.example"
+        APP_BASE_URL: "https://vexylo-ci.example"
         EMAIL_HOST_USER: "ci-user@example.com"
         EMAIL_HOST_PASSWORD: "ci-password"
       run: |
@@ -105,8 +105,8 @@ jobs:
         DEBUG: "False"
         SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
         DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
-        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
-        APP_BASE_URL: "http://localhost:8000"
+        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver,vexylo-ci.example"
+        APP_BASE_URL: "https://vexylo-ci.example"
         SECURE_SSL_REDIRECT: "True"
         EMAIL_HOST_USER: "ci-user@example.com"
         EMAIL_HOST_PASSWORD: "ci-password"
@@ -125,8 +125,8 @@ jobs:
         DEBUG: "False"
         SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
         DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
-        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
-        APP_BASE_URL: "http://localhost:8000"
+        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver,vexylo-ci.example"
+        APP_BASE_URL: "https://vexylo-ci.example"
         USE_REAL_POSTGRES_TESTS: "true"
         CI_POSTGRES_REQUIRED: "true"
         EMAIL_HOST_USER: "ci-user@example.com"

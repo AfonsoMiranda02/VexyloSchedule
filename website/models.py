@@ -64,6 +64,18 @@ class BusinessInfo(models.Model):
         """Retorna a instância singleton ou uma instância não-salva em memória sem mutar a BD em leituras GET."""
         info = cls.objects.first()
         if not info:
+            from django.conf import settings
+            if not getattr(settings, 'DEBUG', True):
+                return cls(
+                    name="VexyloSchedule",
+                    address="Configuração em curso",
+                    phone="",
+                    whatsapp="",
+                    schedule="Horário a definir no painel de administração",
+                    opening_time=time(9, 0),
+                    closing_time=time(19, 0),
+                    cancel_limit_hours=24
+                )
             return cls(
                 name="VexyloSchedule",
                 address="Morada a definir",

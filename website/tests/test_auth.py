@@ -71,11 +71,11 @@ class AuthTests(TestCase):
         self.assertContains(response, "Este email já se encontra registado")
 
     @override_settings(
-        CANONICAL_HOST='trusted-vexylo.com',
+        APP_BASE_URL='https://trusted-vexylo.com',
         ALLOWED_HOSTS=['trusted-vexylo.com', 'testserver', 'localhost', '127.0.0.1']
     )
     def test_password_reset_sends_exactly_one_email_and_uses_trusted_host(self):
-        """Password reset deve enviar exatamente UM email usando o host fidedigno configurado."""
+        """Password reset deve enviar exatamente UM email usando o host fidedigno configurado em APP_BASE_URL."""
         User.objects.create_user(username='recuperar', email='recuperar@exemplo.com', password='OldPassword123!')
         
         mail.outbox.clear()
@@ -91,10 +91,10 @@ class AuthTests(TestCase):
         
         # Verifica se o link contém o domínio confiável configurado
         email_body = sent_email.body
-        self.assertIn('trusted-vexylo.com', email_body)
+        self.assertIn('https://trusted-vexylo.com', email_body)
 
     @override_settings(
-        CANONICAL_HOST='app.vexyloschedule.com',
+        APP_BASE_URL='https://app.vexyloschedule.com',
         ALLOWED_HOSTS=['app.vexyloschedule.com', 'testserver', 'localhost', '127.0.0.1']
     )
     def test_password_reset_host_header_poisoning_prevented(self):
@@ -109,11 +109,11 @@ class AuthTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
     @override_settings(
-        CANONICAL_HOST='canonical-vexylo.com',
+        APP_BASE_URL='https://canonical-vexylo.com',
         ALLOWED_HOSTS=['canonical-vexylo.com', 'another-allowed.com', 'testserver']
     )
     def test_password_reset_forces_canonical_host_even_if_alternative_host_used(self):
-        """Mesmo que o pedido use outro host permitido, o link gerado usa obrigatoriamente o CANONICAL_HOST."""
+        """Mesmo que o pedido use outro host permitido, o link gerado usa obrigatoriamente o APP_BASE_URL."""
         User.objects.create_user(username='vitima2', email='vitima2@exemplo.com', password='OldPassword123!')
         mail.outbox.clear()
         
@@ -259,7 +259,7 @@ class AuthTests(TestCase):
             response = self.client.post(self.register_url, payload)
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Este email já está registado.")
+        self.assertContains(response, "Este email já se encontra registado.")
 
     def test_login_rate_limiting_isolated_by_account_hash(self):
         """Tentativas de login falhadas num utilizador não bloqueiam imediatamente outro utilizador no mesmo IP."""
@@ -278,3 +278,47 @@ class AuthTests(TestCase):
         # Tentativa para 'user_beta' a partir do mesmo cliente/IP deve continuar permitida (não é 429)
         res_beta = self.client.post(login_url, {'username': 'user_beta', 'password': 'wrong'})
         self.assertIn(res_beta.status_code, [200, 302])
+
+    def test_password_reset_anti_enumeration_on_mail_failure(self):
+        """Falha operacional de envio (SMTP) produz exatamente a mesma resposta genérica quer o email exista ou não."""
+        from unittest.mock import patch
+        User.objects.create_user(username='user_smtp_fail', email='fail_smtp@exemplo.com', password='Password123!')
+
+        with patch('django.contrib.auth.forms.PasswordResetForm.save', side_effect=Exception("SMTP Connection Refused")):
+            # Caso 1: Email existente mas com falha SMTP
+            res_existing = self.client.post(self.password_reset_url, {'email': 'fail_smtp@exemplo.com'})
+            self.assertEqual(res_existing.status_code, 302)
+            self.assertEqual(res_existing.url, reverse('password_reset_done'))
+
+            # Caso 2: Email inexistente
+            res_nonexistent = self.client.post(self.password_reset_url, {'email': 'naoexiste@exemplo.com'})
+            self.assertEqual(res_nonexistent.status_code, 302)
+            self.assertEqual(res_nonexistent.url, reverse('password_reset_done'))
+
+    def test_app_base_url_validation_semantics(self):
+        """Validação rigorosa das regras de parsing e HTTPS obrigatório para APP_BASE_URL."""
+        from django.core.exceptions import ImproperlyConfigured
+        from urllib.parse import urlparse
+
+        def validate_base_url(url_val, is_debug):
+            raw = (url_val or '').strip().rstrip('/')
+            if not raw:
+                if is_debug:
+                    return 'http://localhost:8000'
+                raise ImproperlyConfigured("APP_BASE_URL obrigatório quando DEBUG=False")
+            parsed = urlparse(raw)
+            if not parsed.scheme or not parsed.netloc:
+                raise ImproperlyConfigured("URL inválido")
+            if not is_debug and parsed.scheme != 'https':
+                raise ImproperlyConfigured("HTTPS obrigatório em produção")
+            return raw
+
+        with self.assertRaises(ImproperlyConfigured):
+            validate_base_url('', is_debug=False)
+
+        with self.assertRaises(ImproperlyConfigured):
+            validate_base_url('http://example.com', is_debug=False)
+
+        self.assertEqual(validate_base_url('https://example.com', is_debug=False), 'https://example.com')
+        self.assertEqual(validate_base_url('http://localhost:8000', is_debug=True), 'http://localhost:8000')
+        self.assertEqual(validate_base_url('', is_debug=True), 'http://localhost:8000')

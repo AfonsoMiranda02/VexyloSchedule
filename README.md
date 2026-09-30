@@ -48,8 +48,10 @@ Crie um ficheiro `.env` na raiz do projeto com base no modelo fornecido em `.env
 | `SECRET_KEY` | Chave criptográfica única e segura do Django | *(50+ carateres aleatórios)* |
 | `DATABASE_URL` | URL de ligação PostgreSQL (Neon / RDS) | `postgresql://user:pass@host:5432/db?sslmode=require` |
 | `ALLOWED_HOSTS` | Domínios autorizados separados por vírgula (sem `*`) | `meusalao.com,www.meusalao.com,.onrender.com` |
-| `CANONICAL_HOST` | Domínio canónico para emails e links transacionais | `meusalao.com` |
+| `APP_BASE_URL` | Fonte canónica única para geração de URLs externos (obrigatório formato HTTPS em produção) | `https://meusalao.com` |
 | `CSRF_TRUSTED_ORIGINS` | Origens confiáveis para proteção CSRF em HTTPS | `https://meusalao.com,https://*.onrender.com` |
+
+*(Nota: `CANONICAL_HOST` encontra-se descontinuado e é mantido estritamente para compatibilidade legada, derivando automaticamente de `APP_BASE_URL`).*
 
 ### Variáveis de Email (Necessárias para Envio de Recuperação de Password)
 
@@ -110,10 +112,12 @@ cp .env.example .env
 ```bash
 python manage.py migrate --noinput
 python manage.py createcachetable
-python manage.py seed_data
+python manage.py seed_data        # Bootstrap seguro de produção (sem dados fictícios)
+# Para popular catálogo e profissionais de demonstração em desenvolvimento:
+python manage.py seed_demo_data   # Opcional (apenas para testes/desenvolvimento)
 ```
 
-*(O comando `seed_data` é idempotente e independente: inicializa `BusinessInfo`, horários base, catálogo e equipa sem sobrescrever configurações existentes).*
+*(O comando `seed_data` é idempotente e seguro para produção: inicializa `BusinessInfo` se fornecido em variáveis, horários base se em falta, mas nunca inventa serviços, preços ou profissionais fictícios em produção).*
 
 ### 5. Iniciar o Servidor de Desenvolvimento
 
@@ -126,7 +130,7 @@ Aceda ao site em `http://127.0.0.1:8000/` e à área de gestão em `http://127.0
 
 ## 🧪 Testes Automatizados e Qualidade
 
-Para executar a suite completa de 66 testes automatizados:
+Para executar a suite completa de 77 testes automatizados:
 
 ```bash
 python manage.py test
@@ -175,9 +179,10 @@ O contentor executa a seguinte sequência determinística no arranque:
 1. `python manage.py migrate --noinput` (Aplica migrações da base de dados)
 2. `python manage.py createcachetable` (Garante existência idempotente da tabela `vexylo_cache_table` para o `DatabaseCache`)
 3. `python manage.py collectstatic --noinput` (Recolhe ficheiros estáticos com WhiteNoise manifest)
-4. `python manage.py close_past_appointments` (Transita marcações passadas pendentes para o estado neutro `Aguardando Fecho`)
-5. `python manage.py seed_data` (Inicializa idempotentemente dados base da empresa se em falta)
-6. `exec gunicorn core.wsgi:application` (Arranca o servidor de produção com múltiplos workers)
+4. `python manage.py seed_data` (Inicializa idempotentemente dados base da empresa se em falta)
+5. `exec gunicorn core.wsgi:application` (Arranca o servidor de produção com múltiplos workers)
+
+*(Nota arquitetural: O comando `close_past_appointments` NÃO é executado no arranque web do contentor, permanecendo estritamente reservado a tarefas agendadas / cron periódicas).*
 
 ```bash
 # Construir a imagem com o lockfile determinístico
