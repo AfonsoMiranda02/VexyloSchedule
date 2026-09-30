@@ -66,10 +66,19 @@ def register_view(request):
     if request.method == 'POST':
         form = UserRegisterForm(request.POST)
         if form.is_valid():
-            user = form.save()
-            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-            messages.success(request, "Conta criada com sucesso! Bem-vindo(a).")
-            return redirect('dashboard')
+            from django.db import IntegrityError
+            try:
+                user = form.save()
+                login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+                messages.success(request, "Conta criada com sucesso! Bem-vindo(a).")
+                return redirect('dashboard')
+            except IntegrityError as exc:
+                err_msg = str(exc).lower()
+                if 'unique' in err_msg or 'email' in err_msg or 'username' in err_msg:
+                    logger.warning("Concorrência de registo detetada para email/username duplicado: %s", exc)
+                    form.add_error('email', "Este email já está registado.")
+                else:
+                    raise
     else:
         form = UserRegisterForm()
     return render(request, 'website/register.html', {'form': form})
@@ -80,11 +89,19 @@ def complete_profile_view(request):
     """
     Página de aceitação explícita de Termos e Política de Privacidade
     para utilizadores que entram via Google OAuth / Social Login.
+    Preserva destinos de redirecionamento seguros (parâmetro 'next').
     """
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
     
+    from django.utils.http import url_has_allowed_host_and_scheme
+    raw_next = request.POST.get('next') or request.GET.get('next')
+    if raw_next and url_has_allowed_host_and_scheme(raw_next, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        target_next = raw_next
+    else:
+        target_next = reverse('dashboard')
+
     if profile.terms_accepted_at and profile.privacy_policy_accepted_at:
-        return redirect('dashboard')
+        return redirect(target_next)
         
     if request.method == 'POST':
         form = CompleteProfileForm(request.POST)
@@ -95,12 +112,13 @@ def complete_profile_view(request):
             profile.privacy_policy_accepted_at = now
             profile.save()
             messages.success(request, "Registo completado com sucesso! Bem-vindo(a) ao VexyloSchedule.")
-            return redirect('dashboard')
+            return redirect(target_next)
     else:
         form = CompleteProfileForm(initial={'phone': profile.phone or ''})
         
     return render(request, 'website/complete_profile.html', {
         'form': form,
+        'next': target_next if target_next != reverse('dashboard') else '',
         'business_info': BusinessInfo.get_solo()
     })
 
@@ -113,9 +131,11 @@ def book_appointment_view(request):
     Nunca confia nas opções enviadas pelo browser e impede double-booking concorrente.
     """
     business = BusinessInfo.get_solo()
-    closed_days_qs = BusinessOpeningHours.objects.filter(business=business, is_open=False)
-    # Converte weekday Python (0=Seg..6=Dom) para JS getDay() (0=Dom..6=Sáb)
-    closed_weekdays_js = [(day.weekday + 1) % 7 for day in closed_days_qs]
+    if business and business.pk:
+        closed_days_qs = BusinessOpeningHours.objects.filter(business=business, is_open=False)
+        closed_weekdays_js = [(day.weekday + 1) % 7 for day in closed_days_qs]
+    else:
+        closed_weekdays_js = []
 
     if request.method == 'POST':
         form = AppointmentForm(request.POST)
@@ -475,30 +495,43 @@ class CustomPasswordResetView(auth_views.PasswordResetView):
     Recuperação de password segura contra envenenamento de cabeçalho Host e abusos de spam.
     Garante o envio de exatamente UM email através da chamada direta a form.save
     sem invocar super().form_valid(form) duplicado.
+    Preserva a porta para desenvolvimento local (ex: localhost:8000) e falha de forma
+    segura caso o serviço de email esteja indisponível.
     """
-    def get_trusted_domain(self):
-        # 1. Configuração canónica explícita se definida
+    def dispatch(self, request, *args, **kwargs):
+        backend = getattr(settings, 'EMAIL_BACKEND', '')
+        if backend.endswith('dummy.EmailBackend'):
+            from django.http import HttpResponseServerError
+            return HttpResponseServerError("O envio de emails está desativado nesta configuração.")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_trusted_domain_and_protocol(self):
+        from urllib.parse import urlparse
+        app_base = getattr(settings, 'APP_BASE_URL', None)
+        if app_base:
+            parsed = urlparse(app_base if '://' in app_base else f'https://{app_base}')
+            return parsed.netloc, parsed.scheme == 'https'
+
         canonical = getattr(settings, 'CANONICAL_HOST', None)
         if canonical:
-            return canonical.split(':')[0]
-            
-        # 2. Primeiro host permitido não-wildcard
+            parsed = urlparse(canonical if '://' in canonical else f'https://{canonical}')
+            return parsed.netloc or canonical, parsed.scheme == 'https' or self.request.is_secure()
+
         allowed = [h for h in settings.ALLOWED_HOSTS if h not in ('*', '')]
         if allowed:
-            req_host = self.request.get_host().split(':')[0]
+            req_host = self.request.get_host()
+            req_host_no_port = req_host.split(':')[0]
             for h in allowed:
-                if h.startswith('.') and req_host.endswith(h):
-                    return self.request.get_host()
-                if h == req_host:
-                    return self.request.get_host()
-            return allowed[0]
-            
-        return 'localhost:8000'
+                if (h.startswith('.') and req_host_no_port.endswith(h)) or h == req_host_no_port:
+                    return req_host, self.request.is_secure()
+            return allowed[0], self.request.is_secure()
+
+        return 'localhost:8000', False
 
     def form_valid(self, form):
-        trusted_domain = self.get_trusted_domain()
+        trusted_domain, use_https = self.get_trusted_domain_and_protocol()
         opts = {
-            "use_https": self.request.is_secure(),
+            "use_https": use_https,
             "token_generator": self.token_generator,
             "from_email": self.from_email,
             "email_template_name": self.email_template_name,
@@ -508,6 +541,10 @@ class CustomPasswordResetView(auth_views.PasswordResetView):
             "extra_email_context": self.extra_email_context,
             "domain_override": trusted_domain,
         }
-        # Envia exatamente 1 email usando o domínio fidedigno
-        form.save(**opts)
+        try:
+            form.save(**opts)
+        except Exception:
+            logger.exception("Falha de envio de email na recuperação de password")
+            from django.http import HttpResponseServerError
+            return HttpResponseServerError("Ocorreu um erro no servidor de correio ao tentar enviar o email de recuperação.")
         return HttpResponseRedirect(self.get_success_url())

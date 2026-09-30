@@ -1,8 +1,9 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.utils.html import format_html
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin
 from django.core.exceptions import ValidationError
+from django.db.models.deletion import ProtectedError
 from .models import (
     BusinessInfo, BusinessOpeningHours, ServiceCategory, Service, 
     Appointment, StaffMember, Testimonial, UserProfile, Utilizador
@@ -39,6 +40,28 @@ class CustomUserAdmin(UserAdmin):
                     new_fieldsets.append((name, opts))
             return tuple(new_fieldsets)
         return fieldsets
+
+    def delete_model(self, request, obj):
+        try:
+            super().delete_model(request, obj)
+        except ProtectedError:
+            self.message_user(
+                request,
+                f"Não é possível eliminar '{obj}' porque existem marcações históricas associadas. "
+                "Para desativar o acesso sem perder o histórico, desmarque a opção 'Ativo' (is_active=False).",
+                level=messages.ERROR
+            )
+
+    def delete_queryset(self, request, queryset):
+        try:
+            super().delete_queryset(request, queryset)
+        except ProtectedError:
+            self.message_user(
+                request,
+                "Um ou mais clientes não puderam ser eliminados porque possuem marcações históricas associadas. "
+                "Recomenda-se desativá-los (is_active=False) para preservar o histórico.",
+                level=messages.ERROR
+            )
 
 admin.site.unregister(User)
 admin.site.register(Utilizador, CustomUserAdmin)
@@ -87,12 +110,56 @@ class ServiceAdmin(admin.ModelAdmin):
     list_editable = ('is_active',)
     search_fields = ('name',)
 
+    def delete_model(self, request, obj):
+        try:
+            super().delete_model(request, obj)
+        except ProtectedError:
+            self.message_user(
+                request,
+                f"Não é possível eliminar o serviço '{obj.name}' porque existem marcações associadas. "
+                "Para o retirar do catálogo público, desative o serviço (is_active=False).",
+                level=messages.ERROR
+            )
+
+    def delete_queryset(self, request, queryset):
+        try:
+            super().delete_queryset(request, queryset)
+        except ProtectedError:
+            self.message_user(
+                request,
+                "Alguns serviços não puderam ser eliminados porque possuem histórico de marcações. "
+                "Recomenda-se desativá-los (is_active=False).",
+                level=messages.ERROR
+            )
+
 
 @admin.register(StaffMember)
 class StaffMemberAdmin(admin.ModelAdmin): 
     list_display = ('name', 'role', 'is_active')
     list_filter = ('is_active',)
     list_editable = ('is_active',)
+
+    def delete_model(self, request, obj):
+        try:
+            super().delete_model(request, obj)
+        except ProtectedError:
+            self.message_user(
+                request,
+                f"Não é possível eliminar o profissional '{obj.name}' porque existem marcações associadas. "
+                "Para o inativar sem perder o histórico, desmarque a opção 'Ativo' (is_active=False).",
+                level=messages.ERROR
+            )
+
+    def delete_queryset(self, request, queryset):
+        try:
+            super().delete_queryset(request, queryset)
+        except ProtectedError:
+            self.message_user(
+                request,
+                "Alguns profissionais não puderam ser eliminados porque possuem marcações no seu histórico. "
+                "Recomenda-se desativá-los (is_active=False).",
+                level=messages.ERROR
+            )
 
 
 @admin.register(Testimonial)
@@ -122,9 +189,17 @@ class AppointmentAdmin(admin.ModelAdmin):
     list_display = ('user', 'get_service_name', 'staff_member', 'date', 'time', 'end_time', 'get_price', 'colored_status')
     list_filter = ('status', 'date', 'staff_member')
     search_fields = ('user__first_name', 'user__last_name', 'user__username', 'service_name_at_booking', 'service__name')
-    actions = ['approve_appointments', 'complete_appointments', 'no_show_appointments', 'cancel_appointments']
+    actions = ['approve_appointments', 'await_closure_appointments', 'complete_appointments', 'no_show_appointments', 'cancel_appointments']
     date_hierarchy = 'date'
     readonly_fields = ('service_name_at_booking', 'price_at_booking', 'duration_at_booking', 'created_at')
+
+    def save_model(self, request, obj, form, change):
+        from website.services.booking import BookingService, BookingError
+        try:
+            BookingService.save_admin_appointment(obj)
+        except (BookingError, ValidationError) as e:
+            self.message_user(request, f"Erro ao processar marcação: {e}", level=messages.ERROR)
+            raise
 
     def get_service_name(self, obj):
         return obj.effective_service_name
@@ -163,7 +238,19 @@ class AppointmentAdmin(admin.ModelAdmin):
                 self.message_user(request, f"Marcação #{apt.id}: {e}", level='ERROR')
         self.message_user(request, f'{success} marcação(ões) confirmada(s) com sucesso.')
 
-    @admin.action(description='Marcar como Concluída (Confirmada -> Concluída)')
+    @admin.action(description='Aguardar Fecho (Confirmada -> Aguardando Fecho)')
+    def await_closure_appointments(self, request, queryset):
+        success = 0
+        for apt in queryset:
+            try:
+                apt.transition_to('Aguardando Fecho', bypass=request.user.is_superuser)
+                apt.save()
+                success += 1
+            except ValidationError as e:
+                self.message_user(request, f"Marcação #{apt.id}: {e}", level='ERROR')
+        self.message_user(request, f'{success} marcação(ões) movida(s) para Aguardando Fecho.')
+
+    @admin.action(description='Marcar como Concluída (Aguardando Fecho / Confirmada -> Concluída)')
     def complete_appointments(self, request, queryset):
         success = 0
         for apt in queryset:

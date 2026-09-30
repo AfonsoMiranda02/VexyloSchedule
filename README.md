@@ -94,7 +94,7 @@ source venv/bin/activate
 
 ```bash
 pip install -r requirements.txt
-npm install
+npm ci
 npm run build:css
 ```
 
@@ -105,14 +105,15 @@ Copie o ficheiro `.env.example` para `.env` e ajuste as variáveis necessárias:
 cp .env.example .env
 ```
 
-### 4. Executar Migrações e Inicializar Dados
+### 4. Executar Migrações, Provisionar Cache e Inicializar Dados
 
 ```bash
-python manage.py migrate
+python manage.py migrate --noinput
+python manage.py createcachetable
 python manage.py seed_data
 ```
 
-*(O comando `seed_data` é idempotente e cria os horários base — com Quarta-feira e Domingo encerrados por omissão — sem sobrescrever configurações existentes).*
+*(O comando `seed_data` é idempotente e independente: inicializa `BusinessInfo`, horários base, catálogo e equipa sem sobrescrever configurações existentes).*
 
 ### 5. Iniciar o Servidor de Desenvolvimento
 
@@ -123,9 +124,9 @@ Aceda ao site em `http://127.0.0.1:8000/` e à área de gestão em `http://127.0
 
 ---
 
-## 🧪 Testes Automatizados
+## 🧪 Testes Automatizados e Qualidade
 
-Para executar a suite completa de testes em ambiente local (utilizando base de dados em memória):
+Para executar a suite completa de 66 testes automatizados:
 
 ```bash
 python manage.py test
@@ -133,19 +134,27 @@ python manage.py test
 
 ### Testes de Concorrência com PostgreSQL Real
 
-Para validar a integridade de bloqueios sob concorrência real (com threads concorrentes sincronizadas via `threading.Barrier`):
+Para validar a integridade de bloqueios sob concorrência real (com threads concorrentes sincronizadas via `threading.Barrier` disputando slots de agendamento entre clientes e entre Admin vs Cliente):
 
 ```bash
-# Definir a variável e apontar para uma base PostgreSQL (ex: Neon):
+# No Windows PowerShell:
 $env:USE_REAL_POSTGRES_TESTS="true"
 python manage.py test website.tests.test_concurrency --noinput -v 2
+```
+
+### Verificação de Prontidão de Produção (Production-Ready Smoke)
+
+O comando de gestão `verify_production_ready` valida conexões, integridade da tabela `vexylo_cache_table`, leitura/escrita/timeout no `DatabaseCache`, configuração da empresa, URLs canónicos e serviços de email/OAuth:
+
+```bash
+python manage.py verify_production_ready
 ```
 
 ### Verificações de Qualidade e Segurança de Deploy
 
 ```bash
 python manage.py check
-python manage.py check --deploy
+python manage.py check --deploy --fail-level WARNING
 python manage.py makemigrations --check --dry-run
 python manage.py collectstatic --noinput
 pip check
@@ -155,13 +164,23 @@ pip check
 
 ## 🐳 Execução com Docker Multi-Stage
 
-O `Dockerfile` implementa um build multi-stage em três fases:
-1. **Builder Frontend:** Compila os estilos Tailwind com Node.js e gera o CSS minificado para produção.
+O `Dockerfile` implementa um build multi-stage determinístico em três fases:
+1. **Builder Frontend:** Utiliza `package.json` e `package-lock.json` com `npm ci` para compilar os estilos Tailwind minificados para produção.
 2. **Builder Python:** Compila e descarrega as wheels das dependências Python (`gcc`, `libpq-dev`).
 3. **Runtime Slim:** Imagem mínima baseada em `python:3.11-slim` contendo apenas `curl` e `libpq5`, executada como utilizador não-root `appuser`.
 
+### Ciclo de Entrada de Produção (`entrypoint.sh`)
+
+O contentor executa a seguinte sequência determinística no arranque:
+1. `python manage.py migrate --noinput` (Aplica migrações da base de dados)
+2. `python manage.py createcachetable` (Garante existência idempotente da tabela `vexylo_cache_table` para o `DatabaseCache`)
+3. `python manage.py collectstatic --noinput` (Recolhe ficheiros estáticos com WhiteNoise manifest)
+4. `python manage.py close_past_appointments` (Transita marcações passadas pendentes para o estado neutro `Aguardando Fecho`)
+5. `python manage.py seed_data` (Inicializa idempotentemente dados base da empresa se em falta)
+6. `exec gunicorn core.wsgi:application` (Arranca o servidor de produção com múltiplos workers)
+
 ```bash
-# Construir a imagem
+# Construir a imagem com o lockfile determinístico
 docker build -t vexyloschedule:latest .
 
 # Executar o contentor
@@ -178,20 +197,32 @@ Para atualizar o estado de marcações que já decorreram para o estado neutro `
 # Simulação sem alteração (dry-run):
 python manage.py close_past_appointments --dry-run
 
-# Execução automática em cron diário:
+# Execução automática em rotina agendada (ex: cron a cada 15 minutos):
 python manage.py close_past_appointments
 ```
+
+> **Aviso:** O comando move por omissão as marcações para `Aguardando Fecho`. Não utilize overrides para estados finais em cron, para evitar fabricar conclusões ou faltas sem verificação humana.
+
+---
+
+## 📧 Política de Email e Verificação
+
+- **Verificação de Email no Registo:** Encontra-se desativada por omissão (`ACCOUNT_EMAIL_VERIFICATION = 'none'`) para garantir uma experiência de registo rápida e fluida de clientes.
+- **Recuperação de Palavra-passe:** Utiliza SMTP real com proteção fail-safe. Em produção (`DEBUG=False`), a ausência de credenciais SMTP impede o arranque incorreto do serviço (`ImproperlyConfigured`), evitando que pedidos de recuperação de password finjam sucesso sem entrega efetiva.
+- **Domínio Canónico (`APP_BASE_URL`):** Links transacionais enviados por email são construídos com base estrita em `APP_BASE_URL` (com porta respeitada em ambiente local e HTTPS obrigatório em produção), prevenindo ataques de envenenamento de cabeçalho `Host`.
 
 ---
 
 ## 📋 Checklist Manual Antes de Entrar em Produção
 
 - [ ] Variáveis `.env` preenchidas com `DEBUG=False` e `SECRET_KEY` aleatória forte.
+- [ ] `APP_BASE_URL` definido com o domínio público canónico HTTPS (ex: `https://meusalao.com`).
 - [ ] Informações de contacto da empresa (`BusinessInfo`) configuradas no Django Admin com morada e telefone reais.
 - [ ] Horários de funcionamento e pausas de almoço revistos em `BusinessOpeningHours`.
-- [ ] Credenciais SMTP testadas para envio real de recuperação de password.
+- [ ] Credenciais SMTP configuradas e validadas através de `python manage.py verify_production_ready`.
 - [ ] Google OAuth configurado na consola Google Cloud com as URIs de redirecionamento autorizadas.
-- [ ] Superuser de produção criado com password segura e 2FA ativado se aplicável.
+- [ ] Superuser de produção criado com password segura.
 - [ ] Migrações aplicadas na base de dados PostgreSQL (`python manage.py migrate`).
-- [ ] Ficheiros estáticos compilados e recolhidos (`npm run build:css && python manage.py collectstatic`).
+- [ ] Tabela de cache de base de dados criada (`python manage.py createcachetable`).
+- [ ] Ficheiros estáticos compilados e recolhidos (`npm ci && npm run build:css && python manage.py collectstatic`).
 - [ ] Certificado SSL/HTTPS ativo no domínio de produção.

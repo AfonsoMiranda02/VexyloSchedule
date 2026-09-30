@@ -20,12 +20,17 @@ class Command(BaseCommand):
             type=str,
             default='Aguardando Fecho',
             choices=['Aguardando Fecho', 'Concluída', 'Faltou'],
-            help='Estado para o qual as marcações passadas devem transitar (por omissão "Aguardando Fecho").',
+            help='[AVISO: Use apenas "Aguardando Fecho" em cron/automação] Estado de destino para resolução.',
         )
 
     def handle(self, *args, **options):
         dry_run = options['dry_run']
         target_status = options['target_status']
+        if target_status != 'Aguardando Fecho':
+            self.stdout.write(self.style.WARNING(
+                f'[OVERRIDE ADMINISTRATIVO MANUAL] Foi solicitado o estado final "{target_status}". '
+                'Em rotinas automáticas (cron/entrypoint), deve ser utilizado sempre "Aguardando Fecho".'
+            ))
         hoje = timezone.localdate()
         hora_atual = timezone.localtime().time()
 

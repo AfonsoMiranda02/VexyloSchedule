@@ -76,4 +76,3 @@ htmlcov/
 
 # Node / Frontend
 node_modules/
-package-lock.json

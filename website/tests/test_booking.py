@@ -5,6 +5,7 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils import timezone
 from website.models import BusinessInfo, BusinessOpeningHours, ServiceCategory, Service, StaffMember, Appointment, UserProfile
+from website.forms import AppointmentAdminForm
 from website.services.booking import (
     BookingService, BookingError, BusinessClosedError, 
     InvalidSlotError, SlotOccupiedError, StaffUnavailableError
@@ -415,3 +416,117 @@ class BookingTests(TestCase):
         # Staff ID inválido/inexistente explicitamente fornecido
         res = self.client.get(url, {'service_id': self.service_30.id, 'date': '2026-05-10', 'staff_id': '99999'})
         self.assertEqual(res.status_code, 400)
+
+    def test_admin_appointment_slot_granularity_enforced(self):
+        """O formulário de administração deve rejeitar horários que não respeitam a granularidade (ex: 10:07, 10:13, 10:45)."""
+        target_date = self.get_future_open_date()
+
+        for invalid_time in [time(10, 7), time(10, 13), time(10, 45)]:
+            form_data = {
+                'user': self.user.id,
+                'service': self.service_30.id,
+                'staff_member': self.staff1.id,
+                'date': target_date,
+                'time': invalid_time,
+                'status': 'Confirmada'
+            }
+            form = AppointmentAdminForm(data=form_data)
+            self.assertFalse(form.is_valid())
+            self.assertIn('intervalos de 30 minutos', str(form.errors))
+
+        # 10:00 e 10:30 devem ser válidos
+        for valid_time in [time(10, 0), time(10, 30)]:
+            form_data = {
+                'user': self.user.id,
+                'service': self.service_30.id,
+                'staff_member': self.staff1.id,
+                'date': target_date,
+                'time': valid_time,
+                'status': 'Confirmada'
+            }
+            form = AppointmentAdminForm(data=form_data)
+            self.assertTrue(form.is_valid(), form.errors)
+
+    def test_admin_appointment_requires_staff_on_new_appointments(self):
+        """Novas marcações criadas no Admin exigem profissional atribuído; marcações históricas com NULL mantêm-se seguras."""
+        target_date = self.get_future_open_date()
+
+        # 1. Nova marcação sem staff -> Deve ser rejeitada
+        form_data = {
+            'user': self.user.id,
+            'service': self.service_30.id,
+            'staff_member': '',
+            'date': target_date,
+            'time': time(10, 0),
+            'status': 'Confirmada'
+        }
+        form = AppointmentAdminForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn('obrigatório atribuir um profissional', str(form.errors))
+
+        # 2. Marcação legada existente com staff=NULL -> Deve poder ser visualizada e editada com segurança
+        legacy_appt = Appointment.objects.create(
+            user=self.user,
+            service=self.service_30,
+            staff_member=None,
+            date=target_date,
+            time=time(15, 0),
+            status='Confirmada'
+        )
+        self.assertIsNone(legacy_appt.staff_member)
+
+        # Editar marcação legada atribuindo um profissional
+        edit_data = {
+            'user': self.user.id,
+            'service': self.service_30.id,
+            'staff_member': self.staff1.id,
+            'date': target_date,
+            'time': time(15, 0),
+            'status': 'Confirmada'
+        }
+        edit_form = AppointmentAdminForm(data=edit_data, instance=legacy_appt)
+        self.assertTrue(edit_form.is_valid(), edit_form.errors)
+
+    def test_admin_appointment_reschedule_preserves_snapshot_and_recomputes_end_time(self):
+        """Remarcar no Admin preserva snapshots originais de preço/nome/duração mas recalcula o end_time."""
+        target_date = self.get_future_open_date()
+        appt = Appointment.objects.create(
+            user=self.user,
+            service=self.service_30,
+            staff_member=self.staff1,
+            date=target_date,
+            time=time(10, 0),
+            price_at_booking=Decimal('15.00'),
+            service_name_at_booking='Corte Tradicional Antigo',
+            duration_at_booking=30,
+            end_time=time(10, 30),
+            status='Confirmada'
+        )
+
+        # Alterar o horário para as 11:30
+        appt.time = time(11, 30)
+        saved = BookingService.save_admin_appointment(appt)
+
+        # Snapshots mantêm-se
+        self.assertEqual(saved.service_name_at_booking, 'Corte Tradicional Antigo')
+        self.assertEqual(saved.price_at_booking, Decimal('15.00'))
+        self.assertEqual(saved.duration_at_booking, 30)
+        # End time foi recalculado: 11:30 + 30 min = 12:00
+        self.assertEqual(saved.end_time, time(12, 0))
+
+    def test_booking_with_missing_business_info_handled_cleanly(self):
+        """Se BusinessInfo não existir na base de dados, a consulta de horários não dispara 500 nem ValueError."""
+        BusinessInfo.objects.all().delete()
+        self.assertEqual(BusinessInfo.objects.count(), 0)
+
+        target_date = self.get_future_open_date()
+        # Chamar get_business_hours_for_date quando solo não está gravado
+        hours = BookingService.get_business_hours_for_date(target_date)
+        self.assertIsNotNone(hours)
+        is_open, open_t, close_t, lunch_s, lunch_e = hours
+        self.assertIsInstance(open_t, time)
+        self.assertIsInstance(close_t, time)
+
+        # Aceder à página de agendamento também deve responder com HTTP 200 sem erro
+        response = self.client.get(reverse('book_appointment'))
+        self.assertEqual(response.status_code, 200)

@@ -174,3 +174,107 @@ class AuthTests(TestCase):
         res_blocked = self.client.post(login_url, payload)
         self.assertEqual(res_blocked.status_code, 429)
         self.assertIn(b"Demasiadas tentativas", res_blocked.content)
+
+    @override_settings(
+        APP_BASE_URL='http://localhost:8000',
+        ALLOWED_HOSTS=['localhost', '127.0.0.1', 'testserver']
+    )
+    def test_password_reset_app_base_url_port_preservation(self):
+        """APP_BASE_URL deve preservar a porta de desenvolvimento (ex: localhost:8000) nos links de email."""
+        User.objects.create_user(username='devuser', email='devuser@exemplo.com', password='Password123!')
+        mail.outbox.clear()
+
+        response = self.client.post(self.password_reset_url, {'email': 'devuser@exemplo.com'})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('localhost:8000', mail.outbox[0].body)
+        self.assertIn('http://', mail.outbox[0].body)
+
+    @override_settings(
+        APP_BASE_URL='https://vexylo.example.com',
+        ALLOWED_HOSTS=['vexylo.example.com', 'testserver']
+    )
+    def test_password_reset_app_base_url_production_domain(self):
+        """APP_BASE_URL de produção deve ser a fonte da verdade para o link de email, com protocolo HTTPS."""
+        User.objects.create_user(username='produser', email='produser@exemplo.com', password='Password123!')
+        mail.outbox.clear()
+
+        response = self.client.post(self.password_reset_url, {'email': 'produser@exemplo.com'})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('https://vexylo.example.com', mail.outbox[0].body)
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.dummy.EmailBackend')
+    def test_password_reset_dummy_backend_fails_safely(self):
+        """Se o backend de email for DummyEmailBackend, a rota de password_reset não finge sucesso."""
+        response = self.client.get(self.password_reset_url)
+        self.assertEqual(response.status_code, 500)
+
+    def test_terms_acceptance_preserves_safe_next_and_rejects_open_redirect(self):
+        """O fluxo de termos preserva o destino 'next' seguro e rejeita open redirects maliciosos."""
+        user = User.objects.create_user(username='social_next', email='social_next@exemplo.com', password='Password123!')
+        UserProfile.objects.create(user=user)
+        self.client.force_login(user)
+
+        complete_url = reverse('complete_profile')
+
+        # 1. Com next interno válido (/book/) -> Redireciona para /book/ após submissão
+        res_valid = self.client.post(f"{complete_url}?next=/book/", {
+            'phone': '912345678',
+            'accept_terms': 'on',
+            'next': '/book/'
+        })
+        self.assertRedirects(res_valid, '/book/')
+
+        # 2. Com next externo malicioso (https://evil.example.com) -> Rejeitado e cai no dashboard
+        user2 = User.objects.create_user(username='social_evil', email='social_evil@exemplo.com', password='Password123!')
+        UserProfile.objects.create(user=user2)
+        self.client.force_login(user2)
+
+        res_evil = self.client.post(f"{complete_url}?next=https://evil.example.com", {
+            'phone': '912345678',
+            'accept_terms': 'on',
+            'next': 'https://evil.example.com'
+        })
+        self.assertRedirects(res_evil, reverse('dashboard'))
+
+    def test_registration_duplicate_email_integrity_error_handled_gracefully(self):
+        """Se ocorrer uma colisão concorrente de email gerando IntegrityError, a view retorna erro no formulário sem 500."""
+        from unittest.mock import patch
+        from django.db import IntegrityError
+
+        payload = {
+            'username': 'novorace',
+            'first_name': 'Novo',
+            'email': 'race@exemplo.com',
+            'phone': '912345678',
+            'password1': 'SenhaForte123!',
+            'password2': 'SenhaForte123!',
+            'accept_terms': 'on'
+        }
+
+        # Simula IntegrityError no momento do form.save() devido a race condition na base de dados
+        with patch('website.forms.UserRegisterForm.save') as mock_save:
+            mock_save.side_effect = IntegrityError('duplicate key value violates unique constraint "unique_user_email_ci"')
+            response = self.client.post(self.register_url, payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Este email já está registado.")
+
+    def test_login_rate_limiting_isolated_by_account_hash(self):
+        """Tentativas de login falhadas num utilizador não bloqueiam imediatamente outro utilizador no mesmo IP."""
+        from django.core.cache import cache
+        cache.clear()
+
+        login_url = reverse('login')
+        # 5 tentativas falhadas na conta 'user_alfa'
+        for _ in range(5):
+            self.client.post(login_url, {'username': 'user_alfa', 'password': 'wrong'})
+
+        # 6ª tentativa para 'user_alfa' está bloqueada (429)
+        res_alfa = self.client.post(login_url, {'username': 'user_alfa', 'password': 'wrong'})
+        self.assertEqual(res_alfa.status_code, 429)
+
+        # Tentativa para 'user_beta' a partir do mesmo cliente/IP deve continuar permitida (não é 429)
+        res_beta = self.client.post(login_url, {'username': 'user_beta', 'password': 'wrong'})
+        self.assertIn(res_beta.status_code, [200, 302])

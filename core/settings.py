@@ -54,6 +54,7 @@ else:
 
 # Suporte para Reverse Proxy em serviços na nuvem (evita falhas de CSRF / Login em HTTPS)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+TRUST_PROXY_HEADERS = os.getenv('TRUST_PROXY_HEADERS', '').lower() in ('true', '1', 't') or bool(os.getenv('RENDER'))
 
 raw_csrf_origins = os.getenv('CSRF_TRUSTED_ORIGINS', '')
 if raw_csrf_origins:
@@ -235,8 +236,13 @@ else:
     if DEBUG or ('test' in sys.argv):
         EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
     else:
-        if os.getenv('REQUIRE_EMAIL_IN_PROD', 'false').lower() in ('true', '1', 't'):
-            raise ImproperlyConfigured("CRÍTICO: EMAIL_HOST_USER e EMAIL_HOST_PASSWORD são obrigatórios em produção com REQUIRE_EMAIL_IN_PROD=true.")
+        disable_email = os.getenv('DISABLE_EMAIL_IN_PROD', 'false').lower() in ('true', '1', 't')
+        if not disable_email:
+            raise ImproperlyConfigured(
+                "CRÍTICO DE PRODUÇÃO: As credenciais de envio de email (EMAIL_HOST_USER e EMAIL_HOST_PASSWORD) "
+                "são obrigatórias quando DEBUG=False para assegurar a recuperação de password. "
+                "Para desativar explicitamente o envio de email em produção, defina DISABLE_EMAIL_IN_PROD=true."
+            )
         EMAIL_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
 
 LOGIN_URL = '/login/'

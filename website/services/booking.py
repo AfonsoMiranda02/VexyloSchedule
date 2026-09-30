@@ -49,7 +49,9 @@ class BookingService:
         weekday = target_date.weekday() # 0 = Segunda, 6 = Domingo
         business = BusinessInfo.get_solo()
         
-        day_schedule = BusinessOpeningHours.objects.filter(business=business, weekday=weekday).first()
+        day_schedule = None
+        if business and business.pk:
+            day_schedule = BusinessOpeningHours.objects.filter(business=business, weekday=weekday).first()
         if day_schedule:
             return (
                 day_schedule.is_open,
@@ -309,3 +311,112 @@ class BookingService:
         )
 
         return appointment
+
+    @classmethod
+    def save_admin_appointment(cls, appointment: Appointment) -> Appointment:
+        """
+        Guarda ou atualiza uma marcação a partir do Django Admin com autoridade transacional
+        completa (select_for_update no staff), verificação de horário, granularidade,
+        ausência de colisões e integridade de snapshots históricos.
+        """
+        with transaction.atomic():
+            is_new = not appointment.pk
+            target_date = appointment.date
+            start_time = appointment.time
+            service = appointment.service
+            staff = appointment.staff_member
+
+            if not service:
+                raise InvalidSlotError("A marcação deve ter um serviço associado.")
+
+            # Para novas marcações, o profissional é obrigatório
+            if is_new and not staff:
+                raise StaffUnavailableError("É obrigatório atribuir um profissional a novas marcações.")
+
+            # Se for um registo legado sem profissional, permite guardar
+            if not staff:
+                appointment.save()
+                return appointment
+
+            # Bloqueio pessimista de concorrência ao nível de linha no profissional
+            try:
+                locked_staff = StaffMember.objects.select_for_update().get(id=staff.id)
+            except StaffMember.DoesNotExist:
+                raise StaffUnavailableError("O profissional selecionado não existe.")
+
+            if not locked_staff.is_active and (is_new or (appointment.pk and Appointment.objects.filter(pk=appointment.pk, staff_member=locked_staff).count() == 0)):
+                raise StaffUnavailableError(f"O profissional {locked_staff.name} está inativo para novas marcações.")
+
+            # Granularidade (30 minutos)
+            if (start_time.minute % cls.SLOT_INTERVAL_MINUTES != 0) or start_time.second != 0 or start_time.microsecond != 0:
+                raise InvalidSlotError(f"Os agendamentos devem iniciar em intervalos de {cls.SLOT_INTERVAL_MINUTES} minutos.")
+
+            # Duração e snapshots:
+            # Se for nova ou o serviço foi alterado, atualiza snapshots do serviço atual
+            old_inst = None
+            if not is_new:
+                old_inst = Appointment.objects.filter(pk=appointment.pk).first()
+
+            if is_new or (old_inst and old_inst.service_id != service.id):
+                duration = service.duration
+                appointment.service_name_at_booking = service.name
+                appointment.price_at_booking = service.price
+                appointment.duration_at_booking = service.duration
+            else:
+                # Mantém os snapshots históricos originais e preserva a duração original
+                duration = appointment.duration_at_booking or service.duration
+                if not appointment.service_name_at_booking:
+                    appointment.service_name_at_booking = service.name
+                if appointment.price_at_booking is None:
+                    appointment.price_at_booking = service.price
+                if appointment.duration_at_booking is None:
+                    appointment.duration_at_booking = duration
+
+            start_dt = datetime.combine(target_date, start_time)
+            end_dt = start_dt + timedelta(minutes=duration)
+
+            if end_dt.date() != target_date:
+                raise InvalidSlotError("O agendamento ultrapassa o final do dia de funcionamento.")
+
+            # Horário de funcionamento do estabelecimento
+            is_open, open_time, close_time, lunch_st, lunch_et = cls.get_business_hours_for_date(target_date)
+            if not is_open:
+                raise BusinessClosedError("O estabelecimento está encerrado na data selecionada.")
+
+            open_dt = datetime.combine(target_date, open_time)
+            close_dt = datetime.combine(target_date, close_time)
+
+            if start_dt < open_dt or end_dt > close_dt or start_dt >= close_dt:
+                raise InvalidSlotError("O serviço ultrapassa o horário de funcionamento do estabelecimento.")
+
+            if lunch_st and lunch_et:
+                lunch_start_dt = datetime.combine(target_date, lunch_st)
+                lunch_end_dt = datetime.combine(target_date, lunch_et)
+                if start_dt < lunch_end_dt and end_dt > lunch_start_dt:
+                    raise InvalidSlotError("O horário coincide com o período de intervalo/almoço.")
+
+            # Verificação atómica de colisão excluindo o próprio registo em caso de edição
+            collision_qs = Appointment.objects.filter(
+                date=target_date,
+                staff_member=locked_staff
+            ).exclude(status='Cancelada')
+
+            if not is_new:
+                collision_qs = collision_qs.exclude(pk=appointment.pk)
+
+            for apt in collision_qs:
+                apt_start_dt = datetime.combine(apt.date, apt.time)
+                apt_end_dt = (
+                    datetime.combine(apt.date, apt.end_time)
+                    if apt.end_time
+                    else (apt_start_dt + timedelta(minutes=apt.effective_duration))
+                )
+                if apt_start_dt < end_dt and apt_end_dt > start_dt:
+                    raise SlotOccupiedError(
+                        f"Conflito de horário: O profissional {locked_staff.name} já tem uma marcação ({apt.status}) "
+                        f"das {apt.time.strftime('%H:%M')} às {apt_end_dt.time().strftime('%H:%M')}."
+                    )
+
+            appointment.end_time = end_dt.time()
+            appointment.save()
+            return appointment

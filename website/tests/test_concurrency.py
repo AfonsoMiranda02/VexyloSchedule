@@ -276,3 +276,97 @@ class ConcurrencyBookingTests(TransactionTestCase):
         self.assertEqual(active.count(), 1)
         self.assertEqual(len(results), 1)
         self.assertEqual(len(errors), 1)
+
+    def test_concurrent_admin_vs_public_booking_race(self):
+        """
+        Corrida concorrente: Administrador tenta criar/agendar marcação via
+        BookingService.save_admin_appointment enquanto um cliente público tenta reservar o mesmo
+        horário via BookingService.book_appointment com select_for_update.
+        Exatamente UMA deve ter sucesso e a outra deve ser rejeitada.
+        """
+        target_date = self._get_target_date()
+        target_time = time(14, 0)
+        admin_user = User.objects.create_superuser(username='admin_concorrente', password='Password123!')
+
+        if connection.vendor != 'postgresql':
+            # Em SQLite, testa a validação transacional sequencial
+            appt1 = BookingService.book_appointment(
+                user=self.user1,
+                service=self.service30,
+                target_date=target_date,
+                start_time=target_time,
+                staff_member=self.staff1
+            )
+            self.assertIsNotNone(appt1.id)
+
+            admin_appt = Appointment(
+                user=admin_user,
+                service=self.service30,
+                staff_member=self.staff1,
+                date=target_date,
+                time=target_time,
+                status='Confirmada'
+            )
+            with self.assertRaises(BookingError):
+                BookingService.save_admin_appointment(admin_appt)
+            return
+
+        barrier = threading.Barrier(2)
+        results = []
+        errors = []
+
+        def admin_worker():
+            connection.close()
+            try:
+                barrier.wait(timeout=5)
+                admin_appt = Appointment(
+                    user=admin_user,
+                    service=self.service30,
+                    staff_member=self.staff1,
+                    date=target_date,
+                    time=target_time,
+                    status='Confirmada'
+                )
+                saved = BookingService.save_admin_appointment(admin_appt)
+                results.append(('admin', saved))
+            except Exception as e:
+                errors.append(('admin', e))
+            finally:
+                connection.close()
+
+        def public_worker():
+            connection.close()
+            try:
+                barrier.wait(timeout=5)
+                public_appt = BookingService.book_appointment(
+                    user=self.user1,
+                    service=self.service30,
+                    target_date=target_date,
+                    start_time=target_time,
+                    staff_member=self.staff1
+                )
+                results.append(('public', public_appt))
+            except Exception as e:
+                errors.append(('public', e))
+            finally:
+                connection.close()
+
+        t_admin = threading.Thread(target=admin_worker)
+        t_public = threading.Thread(target=public_worker)
+
+        t_admin.start()
+        t_public.start()
+
+        t_admin.join(timeout=10)
+        t_public.join(timeout=10)
+
+        active = Appointment.objects.filter(
+            date=target_date,
+            time=target_time,
+            staff_member=self.staff1
+        ).exclude(status='Cancelada')
+
+        self.assertEqual(active.count(), 1, "Exatamente UMA marcação deve sobreviver à colisão Admin vs Público!")
+        self.assertEqual(len(results), 1, "Exatamente um processo deve ter sucesso!")
+        self.assertEqual(len(errors), 1, "Exatamente um processo deve falhar com BookingError!")
+        self.assertIsInstance(errors[0][1], BookingError)

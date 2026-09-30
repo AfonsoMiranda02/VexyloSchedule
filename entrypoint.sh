@@ -5,6 +5,9 @@ set -euo pipefail
 echo "==> A aplicar migrações na Base de Dados..."
 python manage.py migrate --noinput
 
+echo "==> A criar/verificar tabela de cache (DatabaseCache)..."
+python manage.py createcachetable
+
 echo "==> A compilar ficheiros estáticos (Whitenoise)..."
 python manage.py collectstatic --noinput
 

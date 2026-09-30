@@ -83,6 +83,16 @@ class AppointmentAdminForm(forms.ModelForm):
         from datetime import datetime, timedelta
         from website.services.booking import BookingService
 
+        # 0. Validação de obrigatoriedade de profissional para novas marcações
+        if not self.instance.pk and not staff_member:
+            raise forms.ValidationError({'staff_member': "É obrigatório atribuir um profissional para novas marcações."})
+
+        # 0.1 Validação de granularidade de slot (30 minutos)
+        if (start_time.minute % BookingService.SLOT_INTERVAL_MINUTES != 0) or start_time.second != 0 or start_time.microsecond != 0:
+            raise forms.ValidationError(
+                f"Horário de início inválido. As marcações devem iniciar em intervalos de {BookingService.SLOT_INTERVAL_MINUTES} minutos (ex: 09:00, 09:30)."
+            )
+
         duration = self.instance.duration_at_booking or service.duration
         start_dt = datetime.combine(target_date, start_time)
         end_dt = start_dt + timedelta(minutes=duration)

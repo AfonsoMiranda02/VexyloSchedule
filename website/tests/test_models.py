@@ -197,3 +197,117 @@ class ModelInvariantsAndHistoryTests(TestCase):
         # Deletar user com marcação -> ProtectedError
         with self.assertRaises(ProtectedError):
             self.user.delete()
+
+    def test_business_opening_hours_lunch_validation(self):
+        """Validação de horários de almoço: ambos presentes ou ausentes, e estritamente dentro do horário de expediente."""
+        business = BusinessInfo.objects.create(name="Empresa Horas", address="Rua H", phone="933333333", schedule="09-19")
+        
+        # 1. Apenas lunch_start definido -> Rejeitado
+        h1 = BusinessOpeningHours(
+            business=business, weekday=0, is_open=True,
+            opening_time=time(9, 0), closing_time=time(19, 0),
+            lunch_start=time(13, 0), lunch_end=None
+        )
+        with self.assertRaises(ValidationError):
+            h1.clean()
+
+        # 2. Início de almoço posterior ao fim -> Rejeitado
+        h2 = BusinessOpeningHours(
+            business=business, weekday=0, is_open=True,
+            opening_time=time(9, 0), closing_time=time(19, 0),
+            lunch_start=time(14, 0), lunch_end=time(13, 0)
+        )
+        with self.assertRaises(ValidationError):
+            h2.clean()
+
+        # 3. Almoço fora do horário de funcionamento (ex: 22:00 às 23:00) -> Rejeitado
+        h3 = BusinessOpeningHours(
+            business=business, weekday=0, is_open=True,
+            opening_time=time(9, 0), closing_time=time(19, 0),
+            lunch_start=time(22, 0), lunch_end=time(23, 0)
+        )
+        with self.assertRaises(ValidationError):
+            h3.clean()
+
+        # 4. Almoço válido (13:00 às 14:00) -> Permitido
+        h_ok = BusinessOpeningHours(
+            business=business, weekday=0, is_open=True,
+            opening_time=time(9, 0), closing_time=time(19, 0),
+            lunch_start=time(13, 0), lunch_end=time(14, 0)
+        )
+        h_ok.clean()
+        h_ok.save()
+        self.assertIsNotNone(h_ok.id)
+
+    def test_seeder_idempotency_and_independent_bootstrap(self):
+        """
+        O comando seed_data deve ser idempotente e cada bloco deve ser independente:
+        - Se já existir um superuser, o restante bootstrap (empresa, horários, serviços, staff) ainda assim é executado.
+        - Executar duas vezes não duplica registos.
+        - Se horários estiverem em falta, repara-os com segurança.
+        """
+        from django.core.management import call_command
+        # Limpar estado
+        BusinessInfo.objects.all().delete()
+        Service.objects.all().delete()
+        ServiceCategory.objects.all().delete()
+        StaffMember.objects.all().delete()
+
+        # Criar superutilizador antecipadamente
+        User.objects.create_superuser(username='super_existente', password='Password123!')
+
+        # 1. Primeira execução: mesmo com superuser existente, deve criar a empresa e serviços
+        call_command('seed_data')
+        self.assertEqual(BusinessInfo.objects.count(), 1)
+        self.assertEqual(BusinessOpeningHours.objects.count(), 7)
+        self.assertGreater(Service.objects.count(), 0)
+        self.assertGreater(StaffMember.objects.count(), 0)
+
+        counts_initial = {
+            'business': BusinessInfo.objects.count(),
+            'hours': BusinessOpeningHours.objects.count(),
+            'categories': ServiceCategory.objects.count(),
+            'services': Service.objects.count(),
+            'staff': StaffMember.objects.count(),
+        }
+
+        # 2. Segunda execução imediata: idempotência estrita (nada é duplicado)
+        call_command('seed_data')
+        counts_second = {
+            'business': BusinessInfo.objects.count(),
+            'hours': BusinessOpeningHours.objects.count(),
+            'categories': ServiceCategory.objects.count(),
+            'services': Service.objects.count(),
+            'staff': StaffMember.objects.count(),
+        }
+        self.assertEqual(counts_initial, counts_second)
+
+        # 3. Remoção parcial: apagar 2 dias de horários -> o seeder deve restaurar apenas os dias em falta
+        BusinessOpeningHours.objects.filter(weekday__in=[2, 4]).delete()
+        self.assertEqual(BusinessOpeningHours.objects.count(), 5)
+
+        call_command('seed_data')
+        self.assertEqual(BusinessOpeningHours.objects.count(), 7)
+
+    def test_production_cache_smoke_crud_and_timeout(self):
+        """Validação de operações de leitura, escrita, incremento e expiração no cache."""
+        from django.core.cache import cache
+        import time as pytime
+
+        test_key = "test_smoke_cache_key"
+        cache.delete(test_key)
+
+        # 1. Escrita com timeout curto de 1 segundo
+        cache.set(test_key, 10, timeout=1)
+        self.assertEqual(cache.get(test_key), 10)
+
+        # 2. Incremento
+        try:
+            cache.incr(test_key)
+            self.assertEqual(cache.get(test_key), 11)
+        except ValueError:
+            pass
+
+        # 3. Timeout / Expiração
+        pytime.sleep(1.1)
+        self.assertIsNone(cache.get(test_key))

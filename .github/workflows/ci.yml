@@ -34,9 +34,9 @@ jobs:
       with:
         node-version: '20'
 
-    - name: Compilar Tailwind CSS de Produção
+    - name: Compilar Tailwind CSS de Produção (npm ci determinístico)
       run: |
-        npm install
+        npm ci
         npm run build:css
 
     - name: Configurar Python 3.11
@@ -51,13 +51,40 @@ jobs:
         pip install -r requirements.txt
         pip check
 
+    - name: Executar Migrações de Base de Dados e Provisionamento de Cache
+      env:
+        DEBUG: "False"
+        SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
+        DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
+        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
+        APP_BASE_URL: "http://localhost:8000"
+        EMAIL_HOST_USER: "ci-user@example.com"
+        EMAIL_HOST_PASSWORD: "ci-password"
+      run: |
+        python manage.py migrate --noinput
+        python manage.py createcachetable
+
+    - name: Verificação de Prontidão de Produção (DatabaseCache, DB, Configurações)
+      env:
+        DEBUG: "False"
+        SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
+        DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
+        ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
+        APP_BASE_URL: "http://localhost:8000"
+        EMAIL_HOST_USER: "ci-user@example.com"
+        EMAIL_HOST_PASSWORD: "ci-password"
+      run: |
+        python manage.py verify_production_ready
+
     - name: Verificação de Integridade de Ficheiros Estáticos (WhiteNoise Manifest)
       env:
         DEBUG: "False"
         SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
         DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
         ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
-        CANONICAL_HOST: "localhost"
+        APP_BASE_URL: "http://localhost:8000"
+        EMAIL_HOST_USER: "ci-user@example.com"
+        EMAIL_HOST_PASSWORD: "ci-password"
       run: |
         python manage.py collectstatic --noinput
 
@@ -67,7 +94,9 @@ jobs:
         SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
         DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
         ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
-        CANONICAL_HOST: "localhost"
+        APP_BASE_URL: "http://localhost:8000"
+        EMAIL_HOST_USER: "ci-user@example.com"
+        EMAIL_HOST_PASSWORD: "ci-password"
       run: |
         python manage.py check
 
@@ -77,12 +106,12 @@ jobs:
         SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
         DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
         ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
-        CANONICAL_HOST: "localhost"
+        APP_BASE_URL: "http://localhost:8000"
         SECURE_SSL_REDIRECT: "True"
         EMAIL_HOST_USER: "ci-user@example.com"
         EMAIL_HOST_PASSWORD: "ci-password"
       run: |
-        python manage.py check --deploy
+        python manage.py check --deploy --fail-level WARNING
 
     - name: Validar se todas as migrações foram geradas
       env:
@@ -97,9 +126,11 @@ jobs:
         SECRET_KEY: "ci-secret-key-for-testing-purposes-at-least-50-characters-long-123456"
         DATABASE_URL: "postgresql://vexylo_user:vexylo_secure_password_123@localhost:5432/test_vexylo"
         ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
-        CANONICAL_HOST: "localhost"
+        APP_BASE_URL: "http://localhost:8000"
         USE_REAL_POSTGRES_TESTS: "true"
         CI_POSTGRES_REQUIRED: "true"
+        EMAIL_HOST_USER: "ci-user@example.com"
+        EMAIL_HOST_PASSWORD: "ci-password"
       run: |
         python manage.py test
 

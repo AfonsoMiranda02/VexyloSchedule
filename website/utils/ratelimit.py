@@ -1,23 +1,44 @@
+import hashlib
 import functools
 from django.core.cache import cache
 from django.http import JsonResponse, HttpResponse
 from django.contrib import messages
 from django.shortcuts import redirect
-
 from django.conf import settings
 
 def get_client_ip(request):
     """
     Obtém o IP real do cliente.
-    Em produção atrás de proxy de confiança (ex: Render com SECURE_PROXY_SSL_HEADER ativo),
+    Quando TRUST_PROXY_HEADERS está ativo (ex: atrás de proxy inverso de confiança no Render),
     lê HTTP_X_FORWARDED_FOR. Caso contrário, confia em REMOTE_ADDR para evitar spoofing.
     """
-    trust_proxy = getattr(settings, 'USE_X_FORWARDED_FOR_RATE_LIMIT', not settings.DEBUG)
+    trust_proxy = getattr(settings, 'TRUST_PROXY_HEADERS', False)
     if trust_proxy:
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
         if x_forwarded_for:
             return x_forwarded_for.split(',')[0].strip()
     return request.META.get('REMOTE_ADDR', '')
+
+def get_account_identifier_hash(request, key_prefix: str) -> str:
+    """
+    Gera um hash SHA-256 normalizado e truncado do identificador da conta submetida
+    (username ou email) para compor chaves de rate limiting sem expor dados pessoais
+    em texto limpo no armazenamento de cache.
+    """
+    identifier = ""
+    if key_prefix in ('login', 'auth'):
+        raw = request.POST.get('username') or request.POST.get('login') or ""
+        identifier = raw.strip().lower()
+    elif key_prefix in ('password_reset', 'reset'):
+        raw = request.POST.get('email') or ""
+        identifier = raw.strip().lower()
+    elif key_prefix == 'register':
+        raw = request.POST.get('email') or request.POST.get('username') or ""
+        identifier = raw.strip().lower()
+
+    if identifier:
+        return hashlib.sha256(identifier.encode('utf-8')).hexdigest()[:16]
+    return ""
 
 def check_rate_limit(key: str, limit: int, period: int) -> bool:
     """
@@ -42,7 +63,7 @@ def check_rate_limit(key: str, limit: int, period: int) -> bool:
 
 def rate_limit(key_prefix: str, limit: int = 5, period: int = 60, redirect_url: str = None):
     """
-    Decorador para limitar taxas de pedidos por IP / utilizador.
+    Decorador para limitar taxas de pedidos por IP / utilizador / conta.
     - limit: número máximo de pedidos permitidos
     - period: janela temporal em segundos
     """
@@ -52,8 +73,14 @@ def rate_limit(key_prefix: str, limit: int = 5, period: int = 60, redirect_url: 
             # Apenas aplicar em métodos que alteram estado (POST) ou sensíveis
             if request.method == 'POST':
                 ip = get_client_ip(request)
-                user_id = str(request.user.id) if request.user.is_authenticated else ip
-                rate_key = f"{key_prefix}:{user_id}"
+                if request.user.is_authenticated:
+                    rate_key = f"{key_prefix}:user:{request.user.id}"
+                else:
+                    acct_hash = get_account_identifier_hash(request, key_prefix)
+                    if acct_hash:
+                        rate_key = f"{key_prefix}:{ip}:{acct_hash}"
+                    else:
+                        rate_key = f"{key_prefix}:{ip}"
                 
                 allowed = check_rate_limit(rate_key, limit=limit, period=period)
                 if not allowed:

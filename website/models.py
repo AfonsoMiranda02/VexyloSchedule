@@ -53,7 +53,11 @@ class BusinessInfo(models.Model):
             self.pk = 1
         else:
             self.pk = 1
-        super().save(*args, **kwargs)
+        from django.db import IntegrityError
+        try:
+            super().save(*args, **kwargs)
+        except IntegrityError:
+            raise ValidationError("Já existe uma configuração de empresa registada (Singleton).")
 
     @classmethod
     def get_solo(cls):
@@ -119,6 +123,19 @@ class BusinessOpeningHours(models.Model):
         constraints = [
             CheckConstraint(check=Q(weekday__gte=0) & Q(weekday__lte=6), name='opening_hours_weekday_valid'),
             CheckConstraint(check=Q(is_open=False) | Q(opening_time__lt=models.F('closing_time')), name='opening_hours_time_order'),
+            CheckConstraint(
+                check=(Q(lunch_start__isnull=True) & Q(lunch_end__isnull=True)) | 
+                      (Q(lunch_start__isnull=False) & Q(lunch_end__isnull=False)),
+                name='opening_hours_lunch_both_or_neither'
+            ),
+            CheckConstraint(
+                check=Q(is_open=False) | Q(lunch_start__isnull=True) | (
+                    Q(opening_time__lte=models.F('lunch_start')) &
+                    Q(lunch_start__lt=models.F('lunch_end')) &
+                    Q(lunch_end__lte=models.F('closing_time'))
+                ),
+                name='opening_hours_lunch_within_bounds'
+            ),
         ]
 
     def clean(self):
@@ -133,6 +150,10 @@ class BusinessOpeningHours(models.Model):
                     raise ValidationError("O início do almoço deve ser anterior ao fim do almoço.")
                 if self.lunch_start < self.opening_time or self.lunch_end > self.closing_time:
                     raise ValidationError("O intervalo de almoço deve situar-se dentro do horário de abertura e fecho.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         status = "Aberto" if self.is_open else "Fechado"

@@ -1,12 +1,12 @@
 # Estágio 1: Compilação de Assets Frontend (Tailwind CSS)
 FROM node:20-slim AS frontend-builder
 WORKDIR /app
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY tailwind.config.js ./
 COPY website/ ./website/
 COPY static/ ./static/
-RUN npx tailwindcss -i ./static/css/input.css -o ./static/css/tailwind.css --minify
+RUN npm run build:css
 
 # Estágio 2: Compilação das Dependências Python
 FROM python:3.11-slim AS python-builder
