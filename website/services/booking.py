@@ -9,7 +9,6 @@ from datetime import datetime, date, time, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 from django.db import transaction
 from django.utils import timezone
-from django.core.exceptions import ValidationError
 from website.models import BusinessInfo, BusinessOpeningHours, Service, StaffMember, Appointment
 
 
@@ -39,6 +38,8 @@ class StaffUnavailableError(BookingError):
 
 
 class BookingService:
+    SLOT_INTERVAL_MINUTES = 30
+
     @staticmethod
     def get_business_hours_for_date(target_date: date) -> Tuple[bool, time, time, Optional[time], Optional[time]]:
         """
@@ -58,8 +59,8 @@ class BookingService:
                 day_schedule.lunch_end
             )
             
-        # Fallback histórico: Domingo fechado
-        if weekday == 6:
+        # Fallback histórico seguro: Quarta-feira (2) e Domingo (6) fechados
+        if weekday in (2, 6):
             return (False, time(9, 0), time(19, 0), None, None)
             
         return (
@@ -80,7 +81,7 @@ class BookingService:
     ) -> List[Dict[str, Any]]:
         """
         Calcula os blocos de horário disponíveis para uma data e serviço,
-        otimizado para evitar N+1 queries.
+        otimizado com datetimes completos para evitar transição de meia-noite e N+1 queries.
         """
         is_open, open_time, close_time, lunch_st, lunch_et = cls.get_business_hours_for_date(target_date)
         if not is_open:
@@ -92,17 +93,23 @@ class BookingService:
         curr_dt = datetime.combine(target_date, open_time)
         close_dt = datetime.combine(target_date, close_time)
 
-        while curr_dt + timedelta(minutes=duration) <= close_dt:
-            st = curr_dt.time()
-            et = (curr_dt + timedelta(minutes=duration)).time()
+        lunch_start_dt = datetime.combine(target_date, lunch_st) if (lunch_st and lunch_et) else None
+        lunch_end_dt = datetime.combine(target_date, lunch_et) if (lunch_st and lunch_et) else None
 
-            # Excluir se sobrepõe almoço
-            if lunch_st and lunch_et:
-                if st < lunch_et and et > lunch_st:
+        while curr_dt + timedelta(minutes=duration) <= close_dt:
+            slot_end_dt = curr_dt + timedelta(minutes=duration)
+
+            # Rejeitar se ultrapassa a data (cross-midnight)
+            if slot_end_dt.date() != target_date:
+                break
+
+            # Excluir se sobrepõe intervalo de almoço
+            if lunch_start_dt and lunch_end_dt:
+                if curr_dt < lunch_end_dt and slot_end_dt > lunch_start_dt:
                     curr_dt += timedelta(minutes=slot_interval_minutes)
                     continue
 
-            candidate_blocks.append((st, et))
+            candidate_blocks.append((curr_dt.time(), slot_end_dt.time()))
             curr_dt += timedelta(minutes=slot_interval_minutes)
 
         if not candidate_blocks:
@@ -126,7 +133,10 @@ class BookingService:
         result_slots = []
 
         for st, et in candidate_blocks:
-            slot_aware = timezone.make_aware(datetime.combine(target_date, st), current_tz)
+            cand_start_dt = datetime.combine(target_date, st)
+            cand_end_dt = cand_start_dt + timedelta(minutes=duration)
+
+            slot_aware = timezone.make_aware(cand_start_dt, current_tz)
             is_past = slot_aware < now
 
             is_occupied = True
@@ -137,24 +147,21 @@ class BookingService:
                         staff_apts = [a for a in day_appointments if a.staff_member_id == staff.id]
                         has_collision = False
                         for apt in staff_apts:
-                            apt_st = apt.time
-                            apt_et = apt.end_time or (datetime.combine(target_date, apt.time) + timedelta(minutes=apt.effective_duration)).time()
-                            if apt_st < et and apt_et > st:
+                            apt_start_dt = datetime.combine(apt.date, apt.time)
+                            apt_end_dt = (
+                                datetime.combine(apt.date, apt.end_time) 
+                                if apt.end_time 
+                                else (apt_start_dt + timedelta(minutes=apt.effective_duration))
+                            )
+                            if apt_start_dt < cand_end_dt and apt_end_dt > cand_start_dt:
                                 has_collision = True
                                 break
                         if not has_collision:
                             is_occupied = False
                             break
                 else:
-                    # Fallback caso não existam profissionais cadastrados
-                    has_collision = False
-                    for apt in day_appointments:
-                        apt_st = apt.time
-                        apt_et = apt.end_time or (datetime.combine(target_date, apt.time) + timedelta(minutes=apt.effective_duration)).time()
-                        if apt_st < et and apt_et > st:
-                            has_collision = True
-                            break
-                    is_occupied = has_collision
+                    # Zero profissionais ativos disponíveis -> slot indisponível
+                    is_occupied = True
 
             result_slots.append({
                 'time': st.strftime('%H:%M'),
@@ -176,35 +183,52 @@ class BookingService:
         cancellation_notes: Optional[str] = None
     ) -> Appointment:
         """
-        Reserva autoritativa com verificação server-side e locks transacionais (select_for_update)
-        contra concorrência e double-booking.
+        Reserva autoritativa com verificação server-side completa com datetimes
+        e locks transacionais (select_for_update) contra concorrência e double-booking.
         """
-        # 1. Validação de serviço ativo
+        # 1. Validação de serviço ativo e duração
         if not service.is_active:
             raise InvalidSlotError("O serviço selecionado já não se encontra ativo para marcações.")
 
         duration = service.duration
-        end_time = (datetime.combine(target_date, start_time) + timedelta(minutes=duration)).time()
+        if duration < 5 or duration > 480:
+            raise InvalidSlotError("Duração do serviço inválida (deve situar-se entre 5 e 480 minutos).")
 
-        # 2. Validação de data/hora no passado
+        # 2. Validação da granularidade do slot (30 minutos)
+        if (start_time.minute % cls.SLOT_INTERVAL_MINUTES != 0) or start_time.second != 0 or start_time.microsecond != 0:
+            raise InvalidSlotError(f"Os agendamentos devem iniciar em intervalos de {cls.SLOT_INTERVAL_MINUTES} minutos.")
+
+        # 3. Comparação rigorosa com datetimes completos (evita bugs de viragem de dia / cross-midnight)
+        start_dt = datetime.combine(target_date, start_time)
+        end_dt = start_dt + timedelta(minutes=duration)
+
+        if end_dt.date() != target_date:
+            raise InvalidSlotError("O agendamento ultrapassa o final do dia de funcionamento.")
+
+        # 4. Validação de data/hora no passado
         current_tz = timezone.get_current_timezone()
-        slot_dt = timezone.make_aware(datetime.combine(target_date, start_time), current_tz)
-        if slot_dt < timezone.now():
+        start_dt_aware = timezone.make_aware(start_dt, current_tz)
+        if start_dt_aware < timezone.now():
             raise InvalidSlotError("Não é possível realizar agendamentos em horários passados.")
 
-        # 3. Validação de horário de funcionamento do dia
+        # 5. Validação de horário de funcionamento do dia
         is_open, open_time, close_time, lunch_st, lunch_et = cls.get_business_hours_for_date(target_date)
         if not is_open:
             raise BusinessClosedError("O estabelecimento está encerrado na data selecionada.")
 
-        if start_time < open_time or end_time > close_time:
+        open_dt = datetime.combine(target_date, open_time)
+        close_dt = datetime.combine(target_date, close_time)
+
+        if start_dt < open_dt or end_dt > close_dt or start_dt >= close_dt:
             raise InvalidSlotError("O serviço ultrapassa o horário de funcionamento do estabelecimento.")
 
         if lunch_st and lunch_et:
-            if start_time < lunch_et and end_time > lunch_st:
+            lunch_start_dt = datetime.combine(target_date, lunch_st)
+            lunch_end_dt = datetime.combine(target_date, lunch_et)
+            if start_dt < lunch_end_dt and end_dt > lunch_start_dt:
                 raise InvalidSlotError("O horário coincide com o período de intervalo/almoço.")
 
-        # 4. Alocação e Lock Concorrente do Profissional
+        # 6. Alocação e Lock Concorrente do Profissional
         assigned_staff: Optional[StaffMember] = None
 
         if staff_member:
@@ -214,15 +238,19 @@ class BookingService:
             except StaffMember.DoesNotExist:
                 raise StaffUnavailableError("O profissional selecionado não existe ou está inativo.")
 
-            # Verifica colisões de horário
+            # Verifica colisões de horário usando datetimes
             existing_apts = list(
                 Appointment.objects.filter(date=target_date, staff_member=locked_staff)
                 .exclude(status='Cancelada')
             )
             for apt in existing_apts:
-                apt_st = apt.time
-                apt_et = apt.end_time or (datetime.combine(target_date, apt.time) + timedelta(minutes=apt.effective_duration)).time()
-                if apt_st < end_time and apt_et > start_time:
+                apt_start_dt = datetime.combine(apt.date, apt.time)
+                apt_end_dt = (
+                    datetime.combine(apt.date, apt.end_time) 
+                    if apt.end_time 
+                    else (apt_start_dt + timedelta(minutes=apt.effective_duration))
+                )
+                if apt_start_dt < end_dt and apt_end_dt > start_dt:
                     raise SlotOccupiedError("O profissional selecionado já tem uma marcação confirmada ou pendente para este horário.")
 
             assigned_staff = locked_staff
@@ -231,48 +259,49 @@ class BookingService:
             # "Qualquer Profissional" - Obter todos os profissionais ativos com lock ordenado para evitar Deadlocks
             all_active_ids = list(StaffMember.objects.filter(is_active=True).values_list('id', flat=True))
             if not all_active_ids:
-                # Se não houver nenhum profissional cadastrado, verifica colisão geral
-                existing_apts = list(Appointment.objects.filter(date=target_date).exclude(status='Cancelada'))
-                for apt in existing_apts:
-                    apt_st = apt.time
-                    apt_et = apt.end_time or (datetime.combine(target_date, apt.time) + timedelta(minutes=apt.effective_duration)).time()
-                    if apt_st < end_time and apt_et > start_time:
-                        raise SlotOccupiedError("Este horário já se encontra preenchido.")
-                assigned_staff = None
-            else:
-                locked_candidates = list(
-                    StaffMember.objects.select_for_update().filter(id__in=all_active_ids).order_by('id')
-                )
-                
-                day_apts = list(
-                    Appointment.objects.filter(date=target_date, staff_member__in=locked_candidates)
-                    .exclude(status='Cancelada')
-                )
+                raise StaffUnavailableError("Não existem profissionais disponíveis para agendamento.")
 
-                for candidate in locked_candidates:
-                    candidate_apts = [a for a in day_apts if a.staff_member_id == candidate.id]
-                    collision = False
-                    for apt in candidate_apts:
-                        apt_st = apt.time
-                        apt_et = apt.end_time or (datetime.combine(target_date, apt.time) + timedelta(minutes=apt.effective_duration)).time()
-                        if apt_st < end_time and apt_et > start_time:
-                            collision = True
-                            break
-                    if not collision:
-                        assigned_staff = candidate
+            locked_candidates = list(
+                StaffMember.objects.select_for_update().filter(id__in=all_active_ids).order_by('id')
+            )
+            
+            day_apts = list(
+                Appointment.objects.filter(date=target_date, staff_member__in=locked_candidates)
+                .exclude(status='Cancelada')
+            )
+
+            for candidate in locked_candidates:
+                candidate_apts = [a for a in day_apts if a.staff_member_id == candidate.id]
+                collision = False
+                for apt in candidate_apts:
+                    apt_start_dt = datetime.combine(apt.date, apt.time)
+                    apt_end_dt = (
+                        datetime.combine(apt.date, apt.end_time) 
+                        if apt.end_time 
+                        else (apt_start_dt + timedelta(minutes=apt.effective_duration))
+                    )
+                    if apt_start_dt < end_dt and apt_end_dt > start_dt:
+                        collision = True
                         break
+                if not collision:
+                    assigned_staff = candidate
+                    break
 
-                if not assigned_staff:
-                    raise SlotOccupiedError("Não há nenhum profissional disponível no horário pretendido. Por favor selecione outro horário.")
+            if not assigned_staff:
+                raise SlotOccupiedError("Esse horário acabou de ser reservado. Por favor escolha outro horário.")
 
-        # 5. Criar a marcação com snapshots históricos
+        # Invariante absoluta: Uma marcação nova de cliente NUNCA pode ter staff_member nulo
+        if not assigned_staff:
+            raise StaffUnavailableError("Não foi possível atribuir um profissional ao agendamento.")
+
+        # 7. Criar a marcação com snapshots históricos
         appointment = Appointment.objects.create(
             user=user,
             service=service,
             staff_member=assigned_staff,
             date=target_date,
             time=start_time,
-            end_time=end_time,
+            end_time=end_dt.time(),
             status='Pendente',
             service_name_at_booking=service.name,
             price_at_booking=service.price,

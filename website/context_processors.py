@@ -1,3 +1,4 @@
+from django.conf import settings
 from .models import BusinessInfo
 
 def business_processor(request):
@@ -8,8 +9,10 @@ def business_processor(request):
             address="Morada a definir",
             phone="900000000",
             whatsapp="900000000",
-            schedule="Horário a definir"
+            schedule="Horário a definir",
+            cancel_limit_hours=24
         )
     return {
-        'business_info': info
+        'business_info': info,
+        'google_oauth_enabled': getattr(settings, 'GOOGLE_OAUTH_ENABLED', False)
     }

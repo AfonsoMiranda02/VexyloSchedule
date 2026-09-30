@@ -9,25 +9,30 @@ O sistema dispõe de uma área pública responsiva para clientes com seleção i
 ## 🚀 Stack Tecnológica
 
 - **Backend:** Python 3.11+ / Django 5.2 LTS
-- **Base de Dados:** PostgreSQL (compatível com Neon Serverless, RDS ou PostgreSQL local)
-- **Autenticação:** Django Auth & `django-allauth` (Google OAuth 2.0 com suporte opcional)
+- **Base de Dados:** PostgreSQL (compatível com Neon Serverless, RDS ou PostgreSQL local; SQLite suportado para desenvolvimento e testes rápidos)
+- **Autenticação:** Django Auth & `django-allauth` (Google OAuth 2.0 condicional caso as credenciais estejam configuradas)
 - **Painel Administrativo:** Django Admin com tema personalizado Jazzmin
-- **Servidor & Ficheiros Estáticos:** Gunicorn & WhiteNoise (com compressão e manifest estático)
-- **Frontend:** Django Templates, Vanilla JavaScript, Tailwind CSS e bibliotecas consolidadas (FullCalendar, Chart.js, Flatpickr)
-- **Contentorização:** Docker (com utilizador não-root e healthcheck)
+- **Servidor & Ficheiros Estáticos:** Gunicorn & WhiteNoise (com armazenamento moderno Django 5.2 `STORAGES`, compressão gzip/brotli e manifest estático)
+- **Frontend:** Django Templates, Vanilla JavaScript, Tailwind CSS compilado localmente em build sem Play CDN, FullCalendar 6.1.15, Chart.js 4.4.7 e Flatpickr 4.6.13
+- **Cache & Rate Limiting:** `DatabaseCache` partilhado em produção (suportando múltiplos workers Gunicorn) e `LocMemCache` em desenvolvimento
+- **Contentorização:** Docker multi-stage (Node.js para compilação CSS, Python wheel builder, imagem final slim sem compiladores, executada sob utilizador não-root `appuser`)
 
 ---
 
-## 🔒 Princípios de Segurança e Boas Práticas
+## 🔒 Princípios de Segurança e Regras de Negócio
 
-1. **Agendamento Autoritativo no Servidor:** O frontend é apenas um facilitador de UX. A disponibilidade, horários de funcionamento, intervalos de almoço e atribuição de profissionais são 100% validados no servidor através do `BookingService`.
-2. **Proteção Contra Concorrência (Double-Booking):** As operações de agendamento correm sob transações atómicas (`transaction.atomic`) com bloqueio ao nível da linha (`select_for_update`) dos profissionais envolvidos, impedindo marcações concorrentes no mesmo intervalo de tempo.
-3. **Prevenção de Stored XSS:** No calendário de administração, os dados de clientes e serviços são construídos estritamente através da API DOM nativa (`document.createElement` e `textContent`), sem recurso a injeção em template strings ou HTML arbitrário.
-4. **Sem Credenciais Hardcoded:** Não existem utilizadores pré-configurados com passwords previsíveis (`admin / admin`). A criação do superuser inicial exige variáveis de ambiente explícitas e palavras-passe com requisitos mínimos de segurança.
-5. **Mitigação de Host Header Poisoning:** Links de recuperação de palavra-passe são gerados utilizando hosts canónicos e de confiança configurados no servidor (`CANONICAL_HOST` ou `ALLOWED_HOSTS` estritos), eliminando o risco de envenenamento de cabeçalho `Host`.
-6. **Integridade Histórica:** Serviços e categorias possuem proteção contra eliminação em cascata (`on_delete=models.PROTECT`). Marcações contêm snapshots imutáveis (`price_at_booking`, `service_name_at_booking`, `duration_at_booking`), garantindo que alterações de preçário no futuro não deturpam o histórico financeiro passado.
-7. **Moderação de Avaliações:** Testemunhos submetidos por clientes entram por defeito em estado oculto (`is_visible=False`), exigindo moderação e aprovação prévia antes de serem publicados.
-8. **Rate Limiting:** Endpoints sensíveis (registo, agendamento, cancelamento e testemunhos) encontram-se protegidos por limites de frequência de pedidos por IP/utilizador.
+1. **Agendamento Autoritativo com Datetimes Completos:** O frontend é apenas um facilitador de UX. A disponibilidade, horários de funcionamento, intervalos de almoço e atribuição de profissionais são 100% validados no servidor através do `BookingService` utilizando objetos completos `datetime` (mitigando fugas em viragens de dia ou meia-noite como 23:45 + 30m). A granularidade de início de slots é fixada em intervalos regulares de 30 minutos.
+2. **Proteção Contra Concorrência (Double-Booking):** As operações de agendamento correm sob transações atómicas (`transaction.atomic`) com bloqueio pessimista ao nível da linha (`select_for_update`) dos profissionais envolvidos (ordenados deterministicamente por ID), impedindo que duas threads ou pedidos simultâneos reservem o mesmo slot ou intervalos sobrepostos.
+3. **Validação no Django Admin:** O `AppointmentAdminForm` submete qualquer criação ou edição manual de marcações no painel de administração às mesmas regras de validação (horário do negócio, almoço, durações e deteção de colisões com exclusão segura do próprio registo em edições).
+4. **Alocação de Profissionais Segura:** Se não existirem profissionais ativos no sistema, marcações públicas falham explicitamente com `StaffUnavailableError`, nunca gerando registos com `staff_member=NULL`.
+5. **Máquina de Estados e Estado Neutro `Aguardando Fecho`:** O comando `close_past_appointments` nunca assume arbitrariamente o sucesso de uma marcação passada como `Concluída`. Em vez disso, transita-a para o estado neutro `Aguardando Fecho`, cabendo aos funcionários confirmar se o cliente compareceu (`Concluída`) ou faltou (`Faltou`).
+6. **Prevenção de Stored XSS:** No calendário de administração, os dados de clientes e serviços são construídos estritamente através da API DOM nativa (`document.createElement` e `textContent`), sem recurso a injeção em template strings ou HTML arbitrário.
+7. **Sem Credenciais Hardcoded:** Não existem utilizadores pré-configurados com passwords previsíveis (`admin / admin`). A criação do superuser inicial via `seed_data` valida a palavra-passe através dos validadores nativos do Django (`validate_password()`).
+8. **Mitigação de Host Header Poisoning:** Links de recuperação de palavra-passe são gerados utilizando o host canónico configurado no servidor (`CANONICAL_HOST` / `APP_BASE_URL`), eliminando o risco de envenenamento de cabeçalho `Host`.
+9. **Integridade Histórica e Proteção:** Clientes (`User`), profissionais (`StaffMember`), serviços (`Service`) e categorias possuem proteção contra eliminação em cascata (`on_delete=models.PROTECT`). Marcações contêm snapshots imutáveis (`price_at_booking`, `service_name_at_booking`, `duration_at_booking`), garantindo que alterações de preçário ou desativação de catálogo não adulteram o histórico financeiro.
+10. **Aceitação Obrigatória de Termos (Social Login):** Utilizadores que acedam via Google OAuth sem termos aceites no perfil são obrigatoriamente redirecionados para `/complete-profile/` antes de poderem aceder à área pessoal ou realizar agendamentos.
+11. **Rate Limiting Distribuído:** Autenticação (Login), Registo, Recuperação de Palavra-passe, Agendamento, Cancelamento e Testemunhos estão protegidos contra abuso por rate limiting baseado em IP e utilizador, com suporte a proxies de confiança (Render) e cache partilhada.
+12. **Unicidade de Email ao Nível da Base de Dados:** Índice único funcional `LOWER(email)` aplicado na tabela `auth_user` para assegurar que registos concorrentes não criam contas duplicadas.
 
 ---
 
@@ -35,25 +40,39 @@ O sistema dispõe de uma área pública responsiva para clientes com seleção i
 
 Crie um ficheiro `.env` na raiz do projeto com base no modelo fornecido em `.env.example`:
 
+### Variáveis Obrigatórias em Produção
+
 | Variável | Descrição | Exemplo |
 | :--- | :--- | :--- |
-| `DEBUG` | Modo de depuração (deve ser `False` em produção) | `False` |
-| `SECRET_KEY` | Chave criptográfica única e aleatória do Django | *(gerar chave forte de 50+ carateres)* |
+| `DEBUG` | Modo de depuração (deve ser obrigatoriamente `False`) | `False` |
+| `SECRET_KEY` | Chave criptográfica única e segura do Django | *(50+ carateres aleatórios)* |
 | `DATABASE_URL` | URL de ligação PostgreSQL (Neon / RDS) | `postgresql://user:pass@host:5432/db?sslmode=require` |
 | `ALLOWED_HOSTS` | Domínios autorizados separados por vírgula (sem `*`) | `meusalao.com,www.meusalao.com,.onrender.com` |
-| `CANONICAL_HOST` | Domínio canónico para emails de recuperação | `meusalao.com` |
+| `CANONICAL_HOST` | Domínio canónico para emails e links transacionais | `meusalao.com` |
 | `CSRF_TRUSTED_ORIGINS` | Origens confiáveis para proteção CSRF em HTTPS | `https://meusalao.com,https://*.onrender.com` |
+
+### Variáveis de Email (Necessárias para Envio de Recuperação de Password)
+
+| Variável | Descrição | Exemplo |
+| :--- | :--- | :--- |
+| `EMAIL_HOST` | Servidor SMTP | `smtp.gmail.com` |
+| `EMAIL_PORT` | Porta SMTP | `587` |
+| `EMAIL_HOST_USER` | Email remetente | `suporte@meusalao.com` |
+| `EMAIL_HOST_PASSWORD` | Password de aplicação do email | `xxxx xxxx xxxx xxxx` |
+| `EMAIL_USE_TLS` | Encriptação STARTTLS | `True` |
+| `DEFAULT_FROM_EMAIL` | Remetente padrão | `VexyloSchedule <suporte@meusalao.com>` |
+
+### Variáveis Opcionais
+
+| Variável | Descrição | Exemplo |
+| :--- | :--- | :--- |
+| `GOOGLE_CLIENT_ID` | Client ID do Google Cloud Console para OAuth | `123456...apps.googleusercontent.com` |
+| `GOOGLE_CLIENT_SECRET` | Client Secret do Google Cloud Console | `GOCSPX-...` |
 | `CREATE_INITIAL_SUPERUSER` | Ativa a criação do admin inicial via `seed_data` | `false` ou `true` |
 | `INITIAL_SUPERUSER_USERNAME` | Nome de utilizador do superuser inicial | `admin_gestor` |
 | `INITIAL_SUPERUSER_EMAIL` | Email do superuser inicial | `admin@meusalao.com` |
-| `INITIAL_SUPERUSER_PASSWORD` | Password forte (mínimo 8 carateres, nunca "admin") | `MinhaPassForte2026!` |
-| `GOOGLE_CLIENT_ID` | Client ID do Google Cloud Console para OAuth | `123456...apps.googleusercontent.com` |
-| `GOOGLE_CLIENT_SECRET` | Client Secret do Google Cloud Console | `GOCSPX-...` |
-| `EMAIL_HOST` | Servidor SMTP para envio de emails transacionais | `smtp.gmail.com` |
-| `EMAIL_PORT` | Porta do servidor SMTP | `587` ou `465` |
-| `EMAIL_HOST_USER` | Utilizador / Email remetente SMTP | `suporte@meusalao.com` |
-| `EMAIL_HOST_PASSWORD` | Password de aplicação do email | `xxxx xxxx xxxx xxxx` |
-| `EMAIL_USE_TLS` / `EMAIL_USE_SSL` | Encriptação de transporte de email | `True` / `False` |
+| `INITIAL_SUPERUSER_PASSWORD` | Password forte para o superuser inicial | `MinhaPassForte2026!` |
+| `LOG_LEVEL` | Nível de detalhe do logging | `INFO` |
 
 ---
 
@@ -75,6 +94,8 @@ source venv/bin/activate
 
 ```bash
 pip install -r requirements.txt
+npm install
+npm run build:css
 ```
 
 ### 3. Configurar Variáveis de Ambiente
@@ -91,15 +112,9 @@ python manage.py migrate
 python manage.py seed_data
 ```
 
-*(O comando `seed_data` é idempotente e cria os horários e serviços base sem sobrescrever dados existentes).*
+*(O comando `seed_data` é idempotente e cria os horários base — com Quarta-feira e Domingo encerrados por omissão — sem sobrescrever configurações existentes).*
 
-### 5. Criar Conta de Administrador Manualmente
-
-```bash
-python manage.py createsuperuser
-```
-
-### 6. Iniciar o Servidor de Desenvolvimento
+### 5. Iniciar o Servidor de Desenvolvimento
 
 ```bash
 python manage.py runserver 8000
@@ -108,36 +123,42 @@ Aceda ao site em `http://127.0.0.1:8000/` e à área de gestão em `http://127.0
 
 ---
 
-## 🧪 Execução de Testes Automatizados
+## 🧪 Testes Automatizados
 
-A aplicação dispõe de uma suite abrangente de testes unitários e de integração que cobrem:
-- Autenticação e unicidade case-insensitive de emails;
-- Mitigação de envenenamento de cabeçalho Host no reset de password;
-- Validação estrita de horários de funcionamento, almoço e antecedentes;
-- Integridade de slots e prevenção de double-booking concorrente;
-- Máquina de estados e permissões de cancelamento;
-- Invariantes de modelos, snapshots de preços e proteção contra eliminação;
-- Moderação de testemunhos e prevenção de Stored XSS.
-
-Para correr a suite completa:
+Para executar a suite completa de testes em ambiente local (utilizando base de dados em memória):
 
 ```bash
 python manage.py test
 ```
 
-Para verificar o estado das migrações e conformidade de segurança para deploy:
+### Testes de Concorrência com PostgreSQL Real
+
+Para validar a integridade de bloqueios sob concorrência real (com threads concorrentes sincronizadas via `threading.Barrier`):
+
+```bash
+# Definir a variável e apontar para uma base PostgreSQL (ex: Neon):
+$env:USE_REAL_POSTGRES_TESTS="true"
+python manage.py test website.tests.test_concurrency --noinput -v 2
+```
+
+### Verificações de Qualidade e Segurança de Deploy
 
 ```bash
 python manage.py check
 python manage.py check --deploy
 python manage.py makemigrations --check --dry-run
+python manage.py collectstatic --noinput
+pip check
 ```
 
 ---
 
-## 🐳 Execução via Docker
+## 🐳 Execução com Docker Multi-Stage
 
-O contentor Docker foi configurado para não executar como utilizador `root`, garantindo higiene de segurança através de um utilizador de sistema dedicado (`appuser`):
+O `Dockerfile` implementa um build multi-stage em três fases:
+1. **Builder Frontend:** Compila os estilos Tailwind com Node.js e gera o CSS minificado para produção.
+2. **Builder Python:** Compila e descarrega as wheels das dependências Python (`gcc`, `libpq-dev`).
+3. **Runtime Slim:** Imagem mínima baseada em `python:3.11-slim` contendo apenas `curl` e `libpq5`, executada como utilizador não-root `appuser`.
 
 ```bash
 # Construir a imagem
@@ -149,16 +170,28 @@ docker run -d --name vexylo -p 8000:8000 --env-file .env vexyloschedule:latest
 
 ---
 
-## ⏰ Tarefas Agendadas (Cron / Tarefas em Segundo Plano)
+## ⏰ Tarefas de Manutenção (Cron / Tarefas em Segundo Plano)
 
-Para processar ou arquivar marcações antigas que já tenham decorrido, o comando de gestão pode ser executado de forma controlada através de um serviço de cron externo (ex: Render Cron Job ou crontab do Linux):
+Para atualizar o estado de marcações que já decorreram para o estado neutro `Aguardando Fecho`:
 
 ```bash
 # Simulação sem alteração (dry-run):
 python manage.py close_past_appointments --dry-run
 
-# Execução explícita (diária às 23:00):
-python manage.py close_past_appointments --target-status=Concluída
+# Execução automática em cron diário:
+python manage.py close_past_appointments
 ```
 
-*Nota: Ao contrário de versões preliminares, o encerramento automático não é executado de forma cega durante pedidos HTTP GET nem no arranque do contentor, preservando a fidelidade dos registos de negócio.*
+---
+
+## 📋 Checklist Manual Antes de Entrar em Produção
+
+- [ ] Variáveis `.env` preenchidas com `DEBUG=False` e `SECRET_KEY` aleatória forte.
+- [ ] Informações de contacto da empresa (`BusinessInfo`) configuradas no Django Admin com morada e telefone reais.
+- [ ] Horários de funcionamento e pausas de almoço revistos em `BusinessOpeningHours`.
+- [ ] Credenciais SMTP testadas para envio real de recuperação de password.
+- [ ] Google OAuth configurado na consola Google Cloud com as URIs de redirecionamento autorizadas.
+- [ ] Superuser de produção criado com password segura e 2FA ativado se aplicável.
+- [ ] Migrações aplicadas na base de dados PostgreSQL (`python manage.py migrate`).
+- [ ] Ficheiros estáticos compilados e recolhidos (`npm run build:css && python manage.py collectstatic`).
+- [ ] Certificado SSL/HTTPS ativo no domínio de produção.

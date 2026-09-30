@@ -248,12 +248,16 @@
                 var searchInput = document.getElementById('calendar-search');
                 var q = searchInput ? searchInput.value : '';
                 
-                var url = '/api/calendar-events/?start=' + fetchInfo.startStr.split('T')[0] + '&end=' + fetchInfo.endStr.split('T')[0] + '&q=' + encodeURIComponent(q);
+                var url = '/api/calendar-events/?start=' + encodeURIComponent(fetchInfo.startStr) + '&end=' + encodeURIComponent(fetchInfo.endStr) + '&q=' + encodeURIComponent(q);
                 
                 fetch(url)
-                    .then(response => response.json())
+                    .then(response => {
+                        if (!response.ok) throw new Error('Erro na resposta da API');
+                        return response.json();
+                    })
                     .then(data => successCallback(data))
-                    .catch(error => failureCallback(error));
+                    .catch(error => failureCallback(error))
+                    .finally(() => { isFetchingCalendar = false; });
             },
             eventContent: function(arg) {
                 var props = arg.event.extendedProps || {};
@@ -273,6 +277,7 @@
                 
                 var iconClass = 'fa-clock'; // Pendente
                 if (props.status === 'Confirmada') iconClass = 'fa-check';
+                else if (props.status === 'Aguardando Fecho') iconClass = 'fa-hourglass-half';
                 else if (props.status === 'Cancelada') iconClass = 'fa-times';
                 else if (props.status === 'Concluída') iconClass = 'fa-check-double';
                 else if (props.status === 'Faltou') iconClass = 'fa-user-slash';
@@ -328,13 +333,12 @@
         
         calendar.render();
         
-        // Atualização periódica segura de eventos (apenas com separador visível)
+        // Atualização periódica segura de eventos vinculada ao término real da requisição
         var isFetchingCalendar = false;
         setInterval(function() {
             if (calendar && !document.hidden && !isFetchingCalendar) {
                 isFetchingCalendar = true;
                 calendar.refetchEvents();
-                setTimeout(function() { isFetchingCalendar = false; }, 2000);
             }
         }, 30000); // 30 segundos
     });

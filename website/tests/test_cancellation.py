@@ -4,13 +4,17 @@ from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils import timezone
-from website.models import BusinessInfo, ServiceCategory, Service, StaffMember, Appointment
+from website.models import BusinessInfo, ServiceCategory, Service, StaffMember, Appointment, UserProfile
 
 class CancellationTests(TestCase):
     def setUp(self):
         self.client = Client()
         self.owner = User.objects.create_user(username='dono', password='Password123!')
         self.other_user = User.objects.create_user(username='outro', password='Password123!')
+        
+        now = timezone.now()
+        UserProfile.objects.create(user=self.owner, terms_accepted_at=now, privacy_policy_accepted_at=now)
+        UserProfile.objects.create(user=self.other_user, terms_accepted_at=now, privacy_policy_accepted_at=now)
         
         self.business = BusinessInfo.objects.create(
             name="Salão Teste",

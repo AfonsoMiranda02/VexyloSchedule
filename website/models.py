@@ -41,27 +41,44 @@ class BusinessInfo(models.Model):
         if self.lunch_start and self.lunch_end:
             if self.lunch_start >= self.lunch_end:
                 raise ValidationError({"lunch_start": "O início do almoço deve ser anterior ao fim do almoço."})
+        if self.cancel_limit_hours is not None and (self.cancel_limit_hours < 0 or self.cancel_limit_hours > 168):
+            raise ValidationError({"cancel_limit_hours": "O limite de cancelamento deve situar-se entre 0 e 168 horas."})
 
     def save(self, *args, **kwargs):
         self.clean()
-        # Singleton pattern: garante que apenas existe 1 registo de BusinessInfo
-        if not self.pk and BusinessInfo.objects.exists():
-            existing = BusinessInfo.objects.first()
-            self.pk = existing.pk
+        # Singleton pattern garantido: impede criação de um segundo registo
+        if not self.pk:
+            if BusinessInfo.objects.exists():
+                raise ValidationError("Já existe uma configuração de empresa registada (Singleton).")
+            self.pk = 1
+        else:
+            self.pk = 1
         super().save(*args, **kwargs)
 
     @classmethod
     def get_solo(cls):
-        """Retorna a instância singleton ou cria uma com defaults seguros."""
+        """Retorna a instância singleton ou uma instância não-salva em memória sem mutar a BD em leituras GET."""
         info = cls.objects.first()
         if not info:
-            info = cls.objects.create(
+            return cls(
                 name="VexyloSchedule",
                 address="Morada a definir",
                 phone="900000000",
-                schedule="Segunda a Sábado: 09:00 - 19:00"
+                whatsapp="900000000",
+                schedule="Segunda a Sábado (Quarta e Domingo encerrado): 09:00 - 19:00",
+                opening_time=time(9, 0),
+                closing_time=time(19, 0),
+                cancel_limit_hours=24
             )
         return info
+
+    @property
+    def clean_whatsapp(self):
+        """Retorna o número de WhatsApp estritamente numérico para integração segura com wa.me."""
+        if not self.whatsapp:
+            return ''
+        import re
+        return re.sub(r'\D', '', self.whatsapp)
 
     def __str__(self):
         return self.name
@@ -71,7 +88,7 @@ class BusinessInfo(models.Model):
         verbose_name = "Informação do Negócio"
         verbose_name_plural = "Informação do Negócio"
         constraints = [
-            CheckConstraint(check=Q(cancel_limit_hours__gte=0), name='business_cancel_limit_positive'),
+            CheckConstraint(check=Q(cancel_limit_hours__gte=0) & Q(cancel_limit_hours__lte=168), name='business_cancel_limit_range'),
         ]
 
 
@@ -99,6 +116,10 @@ class BusinessOpeningHours(models.Model):
         unique_together = ('business', 'weekday')
         verbose_name = "Horário por Dia"
         verbose_name_plural = "Horários por Dia"
+        constraints = [
+            CheckConstraint(check=Q(weekday__gte=0) & Q(weekday__lte=6), name='opening_hours_weekday_valid'),
+            CheckConstraint(check=Q(is_open=False) | Q(opening_time__lt=models.F('closing_time')), name='opening_hours_time_order'),
+        ]
 
     def clean(self):
         super().clean()
@@ -165,7 +186,7 @@ class Service(models.Model):
         verbose_name_plural = "Serviços"
         constraints = [
             CheckConstraint(check=Q(price__gte=0), name='service_price_non_negative'),
-            CheckConstraint(check=Q(duration__gt=0), name='service_duration_positive'),
+            CheckConstraint(check=Q(duration__gte=5) & Q(duration__lte=480), name='service_duration_valid'),
         ]
 
 
@@ -220,22 +241,24 @@ class Appointment(models.Model):
     STATUS_CHOICES = [
         ('Pendente', 'Pendente'),
         ('Confirmada', 'Confirmada'),
+        ('Aguardando Fecho', 'Aguardando Fecho'),
         ('Concluída', 'Concluída'),
         ('Faltou', 'Faltou (No-Show)'),
         ('Cancelada', 'Cancelada')
     ]
 
     VALID_TRANSITIONS = {
-        'Pendente': {'Confirmada', 'Cancelada'},
-        'Confirmada': {'Concluída', 'Faltou', 'Cancelada'},
+        'Pendente': {'Confirmada', 'Cancelada', 'Aguardando Fecho'},
+        'Confirmada': {'Aguardando Fecho', 'Concluída', 'Faltou', 'Cancelada'},
+        'Aguardando Fecho': {'Concluída', 'Faltou', 'Cancelada'},
         'Concluída': set(),
         'Faltou': set(),
         'Cancelada': set(),
     }
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Cliente")
+    user = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name="Cliente")
     service = models.ForeignKey(Service, on_delete=models.PROTECT, verbose_name="Serviço")
-    staff_member = models.ForeignKey(StaffMember, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Especialista")
+    staff_member = models.ForeignKey(StaffMember, on_delete=models.PROTECT, null=True, blank=True, verbose_name="Especialista")
     date = models.DateField(verbose_name="Data da Marcação")
     time = models.TimeField(verbose_name="Hora da Marcação (Início)")
     end_time = models.TimeField(blank=True, null=True, verbose_name="Hora de Fim Estimada")
@@ -258,6 +281,15 @@ class Appointment(models.Model):
                 raise ValidationError(f"Transição de estado inválida: de '{self.status}' para '{new_status}'.")
         self.status = new_status
 
+    def clean(self):
+        super().clean()
+        if self.pk:
+            old = Appointment.objects.filter(pk=self.pk).values('status').first()
+            if old and old['status'] != self.status:
+                allowed = self.VALID_TRANSITIONS.get(old['status'], set())
+                if self.status not in allowed:
+                    raise ValidationError({'status': f"Transição de estado inválida: de '{old['status']}' para '{self.status}'."})
+
     def save(self, *args, **kwargs):
         # Snapshots imutáveis ao momento da criação
         if self.service_id:
@@ -270,9 +302,10 @@ class Appointment(models.Model):
 
         effective_duration = self.duration_at_booking or (self.service.duration if self.service else 30)
 
-        if self.time and not self.end_time:
-            dt = datetime.combine(date.today(), self.time)
-            dt = dt + timedelta(minutes=effective_duration)
+        # Recalcular sempre o end_time se o time for fornecido para evitar end_time desatualizado
+        if self.time:
+            ref_date = self.date or date.today()
+            dt = datetime.combine(ref_date, self.time) + timedelta(minutes=effective_duration)
             self.end_time = dt.time()
 
         super().save(*args, **kwargs)

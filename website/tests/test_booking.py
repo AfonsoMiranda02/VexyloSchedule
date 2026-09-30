@@ -4,7 +4,7 @@ from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils import timezone
-from website.models import BusinessInfo, BusinessOpeningHours, ServiceCategory, Service, StaffMember, Appointment
+from website.models import BusinessInfo, BusinessOpeningHours, ServiceCategory, Service, StaffMember, Appointment, UserProfile
 from website.services.booking import (
     BookingService, BookingError, BusinessClosedError, 
     InvalidSlotError, SlotOccupiedError, StaffUnavailableError
@@ -14,6 +14,8 @@ class BookingTests(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user(username='cliente1', email='cli1@exemplo.com', password='Password123!')
+        now = timezone.now()
+        UserProfile.objects.create(user=self.user, terms_accepted_at=now, privacy_policy_accepted_at=now)
         self.client.force_login(self.user)
         
         # Configurar Negócio
@@ -291,17 +293,125 @@ class BookingTests(TestCase):
                 staff_member=None
             )
 
-    def test_inactive_service_or_staff_rejected(self):
-        """Serviços ou profissionais desativados não podem ser marcados."""
+    def test_cross_midnight_booking_rejected(self):
+        """Marcação às 23:45 com 30m ultrapassa a meia-noite e deve ser rejeitada."""
         target_date = self.get_future_open_date()
-        self.service_30.is_active = False
-        self.service_30.save()
-        
         with self.assertRaises(InvalidSlotError):
             BookingService.book_appointment(
                 user=self.user,
                 service=self.service_30,
                 target_date=target_date,
-                start_time=time(10, 0),
+                start_time=time(23, 45),
                 staff_member=self.staff1
             )
+
+    def test_closing_time_exact_boundaries(self):
+        """
+        18:45 + 30m termina às 19:15 (fecho às 19:00) -> rejeitada.
+        18:30 + 30m termina às 19:00 (fecho às 19:00) -> permitida.
+        """
+        target_date = self.get_future_open_date()
+        
+        # 18:45 + 30m -> Rejeitado
+        with self.assertRaises(InvalidSlotError):
+            BookingService.book_appointment(
+                user=self.user,
+                service=self.service_30,
+                target_date=target_date,
+                start_time=time(18, 45),
+                staff_member=self.staff1
+            )
+
+        # 18:30 + 30m -> Permitido
+        appt = BookingService.book_appointment(
+            user=self.user,
+            service=self.service_30,
+            target_date=target_date,
+            start_time=time(18, 30),
+            staff_member=self.staff1
+        )
+        self.assertEqual(appt.end_time, time(19, 0))
+
+    def test_zero_active_staff_raises_staff_unavailable_error(self):
+        """Se não existirem profissionais ativos, marcação deve falhar e NUNCA criar staff=None."""
+        StaffMember.objects.all().update(is_active=False)
+        target_date = self.get_future_open_date()
+
+        initial_count = Appointment.objects.count()
+        with self.assertRaises(StaffUnavailableError):
+            BookingService.book_appointment(
+                user=self.user,
+                service=self.service_30,
+                target_date=target_date,
+                start_time=time(10, 0),
+                staff_member=None
+            )
+        self.assertEqual(Appointment.objects.count(), initial_count)
+
+    def test_booking_slot_granularity_enforced(self):
+        """Horários que não respeitam a granularidade de 30 minutos devem ser rejeitados."""
+        target_date = self.get_future_open_date()
+        for bad_time in [time(10, 7), time(10, 13), time(10, 29), time(11, 45)]:
+            with self.assertRaises(InvalidSlotError):
+                BookingService.book_appointment(
+                    user=self.user,
+                    service=self.service_30,
+                    target_date=target_date,
+                    start_time=bad_time,
+                    staff_member=self.staff1
+                )
+
+    def test_admin_form_blocks_collision_and_allows_self_edit(self):
+        """AppointmentAdminForm deve bloquear colisões e permitir editar a própria marcação sem colidir consigo mesma."""
+        from website.forms import AppointmentAdminForm
+        target_date = self.get_future_open_date()
+
+        # Cria marcação 10:00 - 10:30 para staff1
+        appt1 = BookingService.book_appointment(
+            user=self.user,
+            service=self.service_30,
+            target_date=target_date,
+            start_time=time(10, 0),
+            staff_member=self.staff1
+        )
+
+        # Tentativa de criar nova marcação pelo Admin no mesmo horário e staff -> Inválido
+        form_data = {
+            'user': self.user.id,
+            'service': self.service_30.id,
+            'staff_member': self.staff1.id,
+            'date': target_date,
+            'time': time(10, 0),
+            'status': 'Confirmada'
+        }
+        form = AppointmentAdminForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn('Conflito de horário', str(form.errors))
+
+        # Editar appt1 mantendo o mesmo horário -> Válido (exclui o próprio pk)
+        edit_data = {
+            'user': self.user.id,
+            'service': self.service_30.id,
+            'staff_member': self.staff1.id,
+            'date': target_date,
+            'time': time(10, 0),
+            'status': 'Confirmada'
+        }
+        edit_form = AppointmentAdminForm(data=edit_data, instance=appt1)
+        self.assertTrue(edit_form.is_valid(), edit_form.errors)
+
+    def test_api_available_times_malformed_input_returns_400(self):
+        """Pedidos com parâmetros inválidos para a API de horários disponíveis devem retornar HTTP 400."""
+        url = reverse('api_available_times')
+        
+        # Data inválida
+        res = self.client.get(url, {'service_id': self.service_30.id, 'date': 'data-invalida'})
+        self.assertEqual(res.status_code, 400)
+
+        # Serviço inválido
+        res = self.client.get(url, {'service_id': '99999', 'date': '2026-05-10'})
+        self.assertEqual(res.status_code, 400)
+
+        # Staff ID inválido/inexistente explicitamente fornecido
+        res = self.client.get(url, {'service_id': self.service_30.id, 'date': '2026-05-10', 'staff_id': '99999'})
+        self.assertEqual(res.status_code, 400)

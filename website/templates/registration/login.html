@@ -17,7 +17,8 @@
             </p>
         </div>
 
-        <!-- Botão de Login com a Google -->
+        <!-- Botão de Login com a Google (Condicional à presença de credenciais configuradas) -->
+        {% if google_oauth_enabled %}
         <div class="google-btn-wrapper" style="margin: 20px 0; text-align: center;">
             <a href="{% provider_login_url 'google' %}" style="display: inline-flex; align-items: center; justify-content: center; background-color: #ffffff; color: #3c4043; border: 1px solid #dadce0; border-radius: 4px; padding: 10px 16px; font-weight: 500; text-decoration: none; font-size: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); width: 100%;">
                 <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style="width: 18px; height: 18px; margin-right: 10px;">
@@ -31,6 +32,7 @@
         </div>
 
         <div style="text-align: center; margin-bottom: 20px; color: #888;">ou</div>
+        {% endif %}
 
         <form class="mt-8 space-y-6" method="POST">
             {% csrf_token %}

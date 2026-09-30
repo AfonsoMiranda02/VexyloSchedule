@@ -125,3 +125,52 @@ class AuthTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('canonical-vexylo.com', mail.outbox[0].body)
         self.assertNotIn('another-allowed.com', mail.outbox[0].body)
+
+    def test_social_user_missing_terms_redirected_and_completed(self):
+        """Utilizador com login social sem termos aceites é redirecionado para /complete-profile/ até aceitar."""
+        social_user = User.objects.create_user(username='googleuser', email='guser@exemplo.com', password='Password123!')
+        # Criar perfil sem termos aceites
+        UserProfile.objects.create(user=social_user, phone='900000000')
+
+        self.client.force_login(social_user)
+
+        # 1. Tenta aceder ao dashboard -> Redirecionado para /complete-profile/
+        dashboard_url = reverse('dashboard')
+        response = self.client.get(dashboard_url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('complete_profile'), response.url)
+
+        # 2. Submete o formulário com aceite de termos
+        complete_url = reverse('complete_profile')
+        post_response = self.client.post(complete_url, {
+            'phone': '912345678',
+            'accept_terms': 'on'
+        })
+        self.assertEqual(post_response.status_code, 302)
+
+        # 3. Verifica se os timestamps foram guardados
+        profile = UserProfile.objects.get(user=social_user)
+        self.assertIsNotNone(profile.terms_accepted_at)
+        self.assertIsNotNone(profile.privacy_policy_accepted_at)
+
+        # 4. Acesso subsequente ao dashboard é permitido
+        res_after = self.client.get(dashboard_url)
+        self.assertEqual(res_after.status_code, 200)
+
+    def test_login_rate_limiting_after_multiple_failures(self):
+        """5 tentativas de login consecutivas falhadas ativam o rate limit (HTTP 429)."""
+        from django.core.cache import cache
+        cache.clear()
+
+        login_url = reverse('login')
+        payload = {'username': 'nonexistent', 'password': 'wrongpassword'}
+
+        # 5 tentativas falhadas permitidas
+        for i in range(5):
+            res = self.client.post(login_url, payload)
+            self.assertIn(res.status_code, [200, 302])
+
+        # A 6ª tentativa deve ser bloqueada por rate limit
+        res_blocked = self.client.post(login_url, payload)
+        self.assertEqual(res_blocked.status_code, 429)
+        self.assertIn(b"Demasiadas tentativas", res_blocked.content)

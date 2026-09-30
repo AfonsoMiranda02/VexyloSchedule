@@ -128,3 +128,160 @@ Este ficheiro documenta detalhadamente todos os prompts recebidos, as ações to
   - `.github/workflows/ci.yml`: Pipeline com serviço PostgreSQL, verificação de ambiente, `check`, `check --deploy`, verificação de migrações e execução dos testes.
   - `.env.example`: Modelo de variáveis de ambiente de produção e desenvolvimento seguro.
   - `README.md` (linhas 1 a 184): Documentação completa de arquitetura, instalação, variáveis, comandos e boas práticas.
+
+---
+
+## [2026-09-30] Segunda Passagem Completa de Hardening, Auditoria Adversarial e Correção de Invariantes
+
+### Prompt do Utilizador:
+> # VexyloSchedule — SECOND FULL PRODUCTION HARDENING PASS
+> 1. Inspecionar o repositório como existe agora e verificar os problemas reportados contra o código real.
+> 2. Preservar correções válidas existentes.
+> 3. Corrigir todas as questões confirmadas (135 itens e diretrizes adversariais).
+> 4. Corrigir cálculo de agendamentos trans-meia-noite (usar datetimes completos).
+> 5. Garantir testes de concorrência com PostgreSQL real e sincronização `threading.Barrier`.
+> 6. Tratar 0 profissionais ativos com `StaffUnavailableError` (sem criar `staff_member=NULL`).
+> 7. Submeter o Django Admin (`AppointmentAdminForm`) às regras de agendamento e disponibilidade.
+> 8. Reforçar máquina de estados com o estado neutro `Aguardando Fecho` (sem inferir `Concluída` automaticamente).
+> 9. Assegurar unicidade case-insensitive de e-mail ao nível da base de dados (`LOWER(email)`).
+> 10. Exigir aceitação de Termos e Privacidade para utilizadores Google OAuth (`TermsAcceptanceMiddleware` + `/complete-profile/`).
+> 11. Rate limiting no Login e Password Reset com suporte a proxies de confiança e cache partilhada.
+> 12. Modernizar armazenamento estático para Django 5.2 `STORAGES`.
+> 13. Compilação local de Tailwind CSS sem Play CDN (`package.json`, `tailwind.config.js`).
+> 14. Commit do `.env.example` e ajuste do `.gitignore`.
+> 15. Dockerfile multi-stage real (3 fases) sem compiladores na imagem final runtime.
+> 16. Sincronizar e tornar verídico o `README.md` e `LOGS.md`.
+
+---
+
+### Ações e Alterações Realizadas:
+
+#### 1. Remoção do Tailwind Play CDN e Criação do Build Local de Frontend
+- **Ficheiro criado:** `package.json` (linhas 1 a 20)
+  - Configuração npm com `tailwindcss@^3.4.17` e script `"build:css": "tailwindcss -i ./static/css/input.css -o ./static/css/tailwind.css --minify"`.
+- **Ficheiro criado:** `tailwind.config.js` (linhas 1 a 28)
+  - Scan de todos os templates em `website/templates/**/*.html` e `static/js/**/*.js` com paleta de cores (`primary`, `bgSoft`, etc.).
+- **Ficheiro criado:** `static/css/input.css` (linhas 1 a 15)
+  - Diretivas `@tailwind base;`, `@tailwind components;`, `@tailwind utilities;`.
+- **Ficheiro gerado:** `static/css/tailwind.css`
+  - CSS minificado compilado (~25KB).
+- **Ficheiro modificado:** `website/templates/website/base.html` (linhas 15 a 30)
+  - Removido `<script src="https://cdn.tailwindcss.com"></script>` e configuração inline `tailwind.config`.
+  - Adicionado `<link rel="stylesheet" href="{% static 'css/tailwind.css' %}">`.
+- **Ficheiro modificado:** `.gitignore` (linhas 8 a 15)
+  - Adicionado `node_modules/` e `!.env.example`.
+
+#### 2. Modernização de Storage para Django 5.2 (`STORAGES`) e Cache de Produção
+- **Ficheiro modificado:** `core/settings.py` (linhas 85 a 265)
+  - Substituído `STATICFILES_STORAGE` obsoleto pelo dicionário moderno `STORAGES` com `CompressedManifestStaticFilesStorage`.
+  - Configurada `CACHES` com `DatabaseCache` (`django_cache_table`) em produção para partilha de rate limits entre múltiplos workers Gunicorn, mantendo `LocMemCache` para desenvolvimento e testes.
+  - Implementado parsing e validação rigorosa de `CANONICAL_HOST` e `APP_BASE_URL`.
+  - Tornada a autenticação Google OAuth condicional através de `GOOGLE_OAUTH_ENABLED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)`.
+  - Configurado fail-fast para envio de email em produção (`REQUIRE_EMAIL_IN_PROD`).
+  - Adicionado `TermsAcceptanceMiddleware` aos `MIDDLEWARE`.
+
+#### 3. Validação de Agendamento com Datetimes Completos e Granularidade de Slots
+- **Ficheiro modificado:** `website/services/booking.py` (linhas 1 a 260)
+  - Eliminado o descarte de datas via `.time()`. A validação agora combina `target_date` e horários em objetos `datetime` conscientes (`start_dt`, `end_dt`, `open_dt`, `close_dt`, `lunch_start_dt`, `lunch_end_dt`).
+  - Rejeição estrita de agendamentos trans-meia-noite (`end_dt.date() != target_date`), como `23:45 + 30m`.
+  - Granularidade de slots obrigatória: início restrito a intervalos regulares de 30 minutos (00 ou 30 minutos), rejeitando horários arbitrários (ex: 10:07, 10:13, 10:29).
+  - Rejeição explícita com `StaffUnavailableError` caso existam 0 profissionais ativos no sistema, nunca criando `Appointment.staff_member = NULL`.
+  - Ordenação determinística por ID no bloqueio pessimista `select_for_update()` para prevenir deadlocks de transações concorrentes.
+
+#### 4. Validação de Agendamentos no Django Admin (`AppointmentAdminForm`)
+- **Ficheiro modificado:** `website/forms.py` (linhas 64 a 158)
+  - Criado `AppointmentAdminForm` com validação completa de horários de funcionamento, almoço, durações e colisão com outros agendamentos do mesmo profissional.
+  - Na edição de agendamentos existentes, a própria marcação (`self.instance.pk`) é excluída da verificação de colisão, permitindo aos administradores editar detalhes sem falsos positivos de conflito.
+  - Criado `CompleteProfileForm` para recolha de telefone e aceitação explícita dos Termos e Condições e Política de Privacidade.
+- **Ficheiro modificado:** `website/admin.py` (linhas 30 a 115)
+  - Registado `AppointmentAdminForm` no `AppointmentAdmin`.
+  - Adicionado badge visual roxo para o novo estado `Aguardando Fecho`.
+
+#### 5. Máquina de Estados Reforçada e Estado Neutro `Aguardando Fecho`
+- **Ficheiro modificado:** `website/models.py` (linhas 15 a 360)
+  - Adicionado estado `'Aguardando Fecho'` às opções de `Appointment.STATUS_CHOICES`.
+  - Atualizado `VALID_TRANSITIONS` para suportar `Confirmada -> Aguardando Fecho`, `Aguardando Fecho -> Concluída`, `Aguardando Fecho -> Faltou`.
+  - Enforçado no método `clean()` e `transition_to()` a proibição de transições inválidas (ex: `Cancelada -> Confirmada`, `Concluída -> Pendente`).
+  - Atualizado `save()` de `Appointment` para recalcular dinamicamente `end_time` caso a hora ou a duração sejam alteradas, prevenindo valores obsoletos.
+  - Proteção contra eliminação acidental: `Appointment.user` e `Appointment.staff_member` configurados com `on_delete=models.PROTECT`.
+  - Singleton `BusinessInfo`: enforçado no `save()` que a tentativa de criar um segundo registo lança `ValidationError`. O método `BusinessInfo.get_solo()` retorna uma instância não-salva em memória sem mutar a base de dados em leituras GET. Adicionada propriedade `clean_whatsapp` que normaliza o número para URLs do WhatsApp.
+  - CheckConstraints adicionadas na BD para `BusinessOpeningHours` (`weekday` entre 0 e 6, `opening_time < closing_time`) e `Service` (`duration` entre 5 e 480 minutos).
+- **Ficheiro modificado:** `website/management/commands/close_past_appointments.py` (linhas 15 a 65)
+  - O comando agora tem por padrão `target_status = 'Aguardando Fecho'`, invocando o método autoritativo `transition_to()` e `save()`, sem fabricar desfechos de sucesso arbitrários.
+
+#### 6. Unicidade de Email na BD e Migração de Dados
+- **Ficheiro criado:** `website/migrations/0005_remove_businessinfo_business_cancel_limit_positive_and_more.py`
+  - Adiciona restrições e campos para o novo estado `Aguardando Fecho`.
+  - Executa verificação de dados para garantir que não existem e-mails duplicados case-insensitively na tabela `auth_user`.
+  - Cria índice único funcional na base de dados PostgreSQL (`unique_user_email_ci`) sobre `LOWER(email)`.
+  - Atualiza os horários base garantindo que Quarta-feira e Domingo permanecem encerrados por omissão, preservando o comportamento histórico da aplicação.
+
+#### 7. Aceitação Obrigatória de Termos para Utilizadores de Login Social
+- **Ficheiro criado:** `website/middleware.py` (linhas 1 a 35)
+  - `TermsAcceptanceMiddleware`: interceta qualquer utilizador autenticado sem `terms_accepted_at` ou `privacy_policy_accepted_at` ao tentar aceder a áreas protegidas (`/dashboard/`, `/book/`, `/cancel/`, `/api/submit-testimonial/`), redirecionando-o para `/complete-profile/?next=...`.
+- **Ficheiro modificado:** `website/views.py` (linhas 54 a 120 e 280 a 380)
+  - Adicionada view `complete_profile_view` que processa o formulário de aceitação de termos e telefone, gravando os timestamps de consentimento.
+  - Substituída a interpolação bizarra no `home_view` por um Django `Prefetch` limpo e canónico de serviços ativos (`Service.objects.filter(is_active=True)`).
+  - API `get_available_times`: retorna HTTP 400 Bad Request se IDs ou datas forem inválidos (em vez de retornar 200 com lista vazia).
+  - API `api_calendar_events`: datas de início e fim tratadas com semântica correta ISO e fim exclusivo (`date__lt=end_date`), revertendo URLs do admin com `reverse()` em vez de caminho hardcoded.
+  - API `cancel_appointment_view`: valida server-side os motivos de cancelamento contra uma lista controlada de opções.
+  - API `admin_dashboard_api_view`: cálculo de `top_services` utiliza o snapshot histórico `service_name_at_booking`.
+- **Ficheiro criado:** `website/templates/website/complete_profile.html` (linhas 1 a 70)
+  - Template de finalização de perfil para utilizadores sociais com checkboxes de consentimento legal.
+
+#### 8. Rate Limiting no Login e Password Reset com Proteção Anti-Spoofing
+- **Ficheiro modificado:** `website/utils/ratelimit.py` (linhas 1 a 75)
+  - `get_client_ip`: em ambiente de produção (com `SECURE_PROXY_SSL_HEADER` / Render) extrai o primeiro IP de `HTTP_X_FORWARDED_FOR`; em ambiente direto confia em `REMOTE_ADDR`, eliminando vulnerabilidades de spoofing de IP.
+  - Resposta padrão HTTP 429 Too Many Requests quando o limite é excedido.
+- **Ficheiro modificado:** `website/views.py` (linhas 54 a 70)
+  - Criada classe `CustomLoginView` herdando de `auth_views.LoginView` com `@rate_limit('login', limit=5, period=300)`.
+  - Rate limiting aplicado também a `register` e `submit_testimonial`.
+
+#### 9. Dockerfile Multi-Stage Real e Segurança CI
+- **Ficheiro modificado:** `Dockerfile` (linhas 1 a 65)
+  - Etapa 1 (`frontend-builder`): `node:20-slim`, executa `npm ci` e compila `tailwind.css`.
+  - Etapa 2 (`python-builder`): `python:3.11-slim`, instala compiladores temporários (`gcc`, `libpq-dev`) e compila wheels em `/install`.
+  - Etapa 3 (`runtime`): `python:3.11-slim`, copia wheels pré-compiladas e assets estáticos, instala apenas `curl` e `libpq5`, e executa como utilizador não-root `appuser`.
+- **Ficheiro criado:** `.dockerignore` (linhas 1 a 25)
+  - Ignora `.env`, `.env.*`, `.git`, `db.sqlite3`, `staticfiles`, `node_modules`, `__pycache__`.
+- **Ficheiro modificado:** `.github/workflows/ci.yml` (linhas 1 a 85)
+  - Healthcheck do serviço PostgreSQL corrigido para usar o utilizador configurado (`pg_isready -U vexylo_user -d test_vexylo`).
+  - Adicionado build de frontend (`npm ci && npm run build:css`).
+  - Adicionado `pip check` e compilação de estáticos (`python manage.py collectstatic --noinput`).
+  - Adicionado `python manage.py check --deploy` com variáveis completas de produção.
+  - Execução dos testes de concorrência com `USE_REAL_POSTGRES_TESTS: "true"`.
+  - Adicionado passo de verificação de build Docker (`docker build -t vexylo:ci .`).
+
+#### 10. Testes Automatizados e Concorrência Real com PostgreSQL
+- **Ficheiros modificados/criados em `website/tests/`:**
+  - `test_concurrency.py`: reestruturado com `threading.Barrier(2)` para corrida simultânea em threads reais contra PostgreSQL. Testa colisão de slots idênticos (10:00-10:30 vs 10:00-10:30), intervalos sobrepostos com durações diferentes (10:00-11:00 vs 10:30-11:00) e atribuição de "Qualquer Profissional" quando apenas um está livre.
+  - `test_booking.py`: adicionados testes para agendamento às 23:45 (+30m) ultrapassando a meia-noite (rejeitado), limite exato de fecho (18:45 vs 18:30 com fecho às 19:00), 0 profissionais ativos lançando `StaffUnavailableError`, granularidade de 30 minutos (10:07, 10:13 rejeitados), validações no `AppointmentAdminForm` e HTTP 400 em parâmetros inválidos da API.
+  - `test_auth.py`: adicionados testes de aceitação de termos para utilizadores de login social com redirecionamento para `/complete-profile/`, e rate limiting de login (HTTP 429 após 5 tentativas).
+  - `test_models.py`: adicionados testes para o estado `'Aguardando Fecho'`, validação da máquina de estados, idempotência do `close_past_appointments`, proteção de eliminação de clientes e profissionais com `PROTECT`, e segurança de leitura em `BusinessInfo.get_solo()`.
+  - `test_security_xss.py`: adicionado teste estático de regressão que verifica que o template do calendário admin não contém `{ html:`, `innerHTML =` nem `${props.client_name}` e utiliza `.textContent`.
+
+---
+
+### Resultados Oficiais dos Testes e Comandos:
+
+1. **Testes Unitários e de Integração:**
+   - `python manage.py test`
+   - **Resultado:** `Ran 52 tests in 26.545s — OK (Todos os 52 testes passaram sem erros nem falhas).`
+
+2. **Testes de Concorrência com PostgreSQL Real (Neon Serverless):**
+   - `$env:USE_REAL_POSTGRES_TESTS="true"; python manage.py test website.tests.test_concurrency --noinput -v 2`
+   - **Base de Dados:** PostgreSQL 18.x (`connection.vendor == 'postgresql'`)
+   - **Resultado:**
+     - `test_concurrent_any_staff_race_with_single_available_professional ... ok`
+     - `test_concurrent_identical_slot_race ... ok`
+     - `test_concurrent_overlapping_durations_race ... ok`
+     - `Ran 3 tests in 47.432s — OK.`
+     - **Comportamento Comprovado:** Duas threads disputaram exatamente o mesmo slot/intervalo com `threading.Barrier`. Em cada cenário, exatamente 1 transação fez commit com sucesso e exatamente 1 requisição falhou com `SlotOccupiedError`. Total de marcações ativas na BD = 1.
+
+3. **Verificações do Sistema e Deploy:**
+   - `python manage.py check`: `System check identified no issues (0 silenced).`
+   - `python manage.py makemigrations --check --dry-run`: `No changes detected.`
+   - `python manage.py check --deploy`: `System check identified no issues (0 silenced).` (Zero avisos com variáveis de produção ativas).
+   - `python manage.py collectstatic --noinput`: `0 static files copied, 196 unmodified, 512 post-processed.`
+   - `pip check`: `No broken requirements found.`
+   - `npm run build:css`: Tailwind CSS compilado e minificado em 317ms.

@@ -3,13 +3,16 @@ from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.core.cache import cache
-from website.models import Testimonial
+from django.utils import timezone
+from website.models import Testimonial, UserProfile
 
 class TestimonialTests(TestCase):
     def setUp(self):
         cache.clear()
         self.client = Client()
         self.user = User.objects.create_user(username='autor', password='Password123!')
+        now = timezone.now()
+        UserProfile.objects.create(user=self.user, terms_accepted_at=now, privacy_policy_accepted_at=now)
         self.url = reverse('submit_testimonial')
 
     def test_unauthenticated_submission_blocked(self):

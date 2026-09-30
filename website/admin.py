@@ -7,6 +7,7 @@ from .models import (
     BusinessInfo, BusinessOpeningHours, ServiceCategory, Service, 
     Appointment, StaffMember, Testimonial, UserProfile, Utilizador
 )
+from .forms import AppointmentAdminForm
 
 class UserProfileInline(admin.StackedInline):
     model = UserProfile
@@ -115,6 +116,7 @@ class TestimonialAdmin(admin.ModelAdmin):
 
 @admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):
+    form = AppointmentAdminForm
     change_list_template = 'admin/website/appointment/change_list.html'
     
     list_display = ('user', 'get_service_name', 'staff_member', 'date', 'time', 'end_time', 'get_price', 'colored_status')
@@ -134,11 +136,12 @@ class AppointmentAdmin(admin.ModelAdmin):
 
     def colored_status(self, obj):
         colors = {
-            'Pendente': '#f59e0b',    # amber-500
-            'Confirmada': '#10b981',  # emerald-500
-            'Concluída': '#3b82f6',   # blue-500
-            'Faltou': '#6b7280',      # gray-500
-            'Cancelada': '#ef4444'    # red-500
+            'Pendente': '#f59e0b',          # amber-500
+            'Confirmada': '#10b981',        # emerald-500
+            'Aguardando Fecho': '#8b5cf6',  # purple-500
+            'Concluída': '#3b82f6',         # blue-500
+            'Faltou': '#6b7280',            # gray-500
+            'Cancelada': '#ef4444'          # red-500
         }
         color = colors.get(obj.status, '#6b7280')
         return format_html(

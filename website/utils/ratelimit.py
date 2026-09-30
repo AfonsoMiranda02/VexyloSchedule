@@ -4,11 +4,19 @@ from django.http import JsonResponse, HttpResponse
 from django.contrib import messages
 from django.shortcuts import redirect
 
+from django.conf import settings
+
 def get_client_ip(request):
-    """Obtém o IP real do cliente, considerando proxies reversos de confiança."""
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        return x_forwarded_for.split(',')[0].strip()
+    """
+    Obtém o IP real do cliente.
+    Em produção atrás de proxy de confiança (ex: Render com SECURE_PROXY_SSL_HEADER ativo),
+    lê HTTP_X_FORWARDED_FOR. Caso contrário, confia em REMOTE_ADDR para evitar spoofing.
+    """
+    trust_proxy = getattr(settings, 'USE_X_FORWARDED_FOR_RATE_LIMIT', not settings.DEBUG)
+    if trust_proxy:
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            return x_forwarded_for.split(',')[0].strip()
     return request.META.get('REMOTE_ADDR', '')
 
 def check_rate_limit(key: str, limit: int, period: int) -> bool:
@@ -61,10 +69,10 @@ def rate_limit(key_prefix: str, limit: int = 5, period: int = 60, redirect_url: 
                             'error': 'Demasiadas tentativas num curto período de tempo. Por favor, aguarde alguns instantes.'
                         }, status=429)
                         
-                    messages.error(request, 'Demasiadas tentativas. Por favor, aguarde um minuto antes de tentar novamente.')
-                    if redirect_url:
-                        return redirect(redirect_url)
-                    return redirect(request.path)
+                    return HttpResponse(
+                        "Demasiadas tentativas. Por favor, aguarde um minuto antes de tentar novamente.",
+                        status=429
+                    )
                     
             return view_func(request, *args, **kwargs)
         return _wrapped_view

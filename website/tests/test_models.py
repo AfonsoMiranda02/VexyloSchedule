@@ -102,7 +102,7 @@ class ModelInvariantsAndHistoryTests(TestCase):
         self.assertEqual(appt.effective_service_name, "Corte Tradicional")
 
     def test_business_info_singleton(self):
-        """BusinessInfo deve comportar-se como singleton, atualizando o registo em vez de duplicar."""
+        """BusinessInfo deve comportar-se como singleton, impedindo a criação de um segundo registo."""
         b1 = BusinessInfo.objects.create(
             name="Empresa A",
             address="Rua A",
@@ -110,14 +110,90 @@ class ModelInvariantsAndHistoryTests(TestCase):
             schedule="09-19"
         )
         
-        # Tentativa de criar uma segunda instância
+        # Tentativa de criar uma segunda instância deve falhar com ValidationError
         b2 = BusinessInfo(
             name="Empresa B",
             address="Rua B",
             phone="922222222",
             schedule="09-19"
         )
-        b2.save()
+        with self.assertRaises(ValidationError):
+            b2.save()
         
         self.assertEqual(BusinessInfo.objects.count(), 1)
-        self.assertEqual(BusinessInfo.objects.first().name, "Empresa B")
+        self.assertEqual(BusinessInfo.objects.first().name, "Empresa A")
+
+    def test_state_machine_aguardando_fecho_and_invalid_transitions(self):
+        """Testa o novo estado 'Aguardando Fecho' e bloqueio de transições inválidas."""
+        appt = Appointment.objects.create(
+            user=self.user,
+            service=self.service,
+            staff_member=self.staff,
+            date=date(2026, 3, 10),
+            time=time(10, 0),
+            status='Confirmada'
+        )
+
+        # Transição válida: Confirmada -> Aguardando Fecho
+        appt.transition_to('Aguardando Fecho')
+        appt.save()
+        self.assertEqual(appt.status, 'Aguardando Fecho')
+
+        # Transição válida: Aguardando Fecho -> Concluída
+        appt.transition_to('Concluída')
+        appt.save()
+        self.assertEqual(appt.status, 'Concluída')
+
+        # Transição inválida: Concluída -> Pendente
+        with self.assertRaises(ValidationError):
+            appt.transition_to('Pendente')
+
+        # Transição inválida: Cancelada -> Confirmada
+        appt.status = 'Cancelada'
+        with self.assertRaises(ValidationError):
+            appt.transition_to('Confirmada')
+
+    def test_close_past_appointments_moves_to_aguardando_fecho(self):
+        """O comando de encerramento deve mover marcações passadas para 'Aguardando Fecho' e não inferir 'Concluída'."""
+        from django.core.management import call_command
+        past_appt = Appointment.objects.create(
+            user=self.user,
+            service=self.service,
+            staff_member=self.staff,
+            date=date(2020, 1, 1),
+            time=time(10, 0),
+            status='Confirmada'
+        )
+
+        call_command('close_past_appointments')
+        past_appt.refresh_from_db()
+        self.assertEqual(past_appt.status, 'Aguardando Fecho')
+
+    def test_business_info_get_solo_does_not_mutate_db_on_read(self):
+        """Chamar get_solo() quando não há registo deve retornar uma instância não gravada sem mutar a BD."""
+        BusinessInfo.objects.all().delete()
+        self.assertEqual(BusinessInfo.objects.count(), 0)
+
+        solo = BusinessInfo.get_solo()
+        self.assertEqual(solo.name, "VexyloSchedule")
+        self.assertIsNone(solo.pk)
+        # Garante que a BD continua vazia após o read
+        self.assertEqual(BusinessInfo.objects.count(), 0)
+
+    def test_appointment_protect_on_user_and_staff_delete(self):
+        """Eliminar User ou StaffMember com marcações históricas deve disparar ProtectedError."""
+        appt = Appointment.objects.create(
+            user=self.user,
+            service=self.service,
+            staff_member=self.staff,
+            date=date(2026, 4, 1),
+            time=time(14, 0)
+        )
+
+        # Deletar staff com marcação -> ProtectedError
+        with self.assertRaises(ProtectedError):
+            self.staff.delete()
+
+        # Deletar user com marcação -> ProtectedError
+        with self.assertRaises(ProtectedError):
+            self.user.delete()

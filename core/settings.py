@@ -40,7 +40,17 @@ if 'test' in sys.argv or os.getenv('DJANGO_TEST') == 'true':
 if not DEBUG and '*' in ALLOWED_HOSTS:
     raise ImproperlyConfigured("SEGURANÇA: O wildcard '*' é proibido em ALLOWED_HOSTS em produção para prevenir envenenamento de cabeçalho Host.")
 
-CANONICAL_HOST = os.getenv('CANONICAL_HOST')
+APP_BASE_URL = os.getenv('APP_BASE_URL', '').strip().rstrip('/')
+raw_canonical = os.getenv('CANONICAL_HOST', '').strip()
+if not raw_canonical and APP_BASE_URL:
+    from urllib.parse import urlparse
+    CANONICAL_HOST = urlparse(APP_BASE_URL).netloc or APP_BASE_URL
+else:
+    if '://' in raw_canonical:
+        from urllib.parse import urlparse
+        CANONICAL_HOST = urlparse(raw_canonical).netloc
+    else:
+        CANONICAL_HOST = raw_canonical or None
 
 # Suporte para Reverse Proxy em serviços na nuvem (evita falhas de CSRF / Login em HTTPS)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -86,6 +96,10 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 # Google OAuth Provider Config
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
+GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
+GOOGLE_OAUTH_ENABLED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
         'SCOPE': [
@@ -97,8 +111,8 @@ SOCIALACCOUNT_PROVIDERS = {
             'prompt': 'select_account',
         },
         'APP': {
-            'client_id': os.environ.get('GOOGLE_CLIENT_ID', ''),
-            'secret': os.environ.get('GOOGLE_CLIENT_SECRET', ''),
+            'client_id': GOOGLE_CLIENT_ID,
+            'secret': GOOGLE_CLIENT_SECRET,
             'key': ''
         }
     }
@@ -114,6 +128,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
+    'website.middleware.TermsAcceptanceMiddleware',
 ]
 
 ROOT_URLCONF = 'core.urls'
@@ -138,7 +153,9 @@ WSGI_APPLICATION = 'core.wsgi.application'
 
 # 4. DATABASE FAIL-SAFE CONFIGURATION
 database_url = os.getenv('DATABASE_URL')
-if 'test' in sys.argv and not os.getenv('USE_REAL_POSTGRES_TESTS'):
+use_postgres_tests = os.getenv('USE_REAL_POSTGRES_TESTS', 'false').lower() in ('true', '1', 't')
+
+if 'test' in sys.argv and not use_postgres_tests:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -178,27 +195,48 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# Django 5.2 STORAGES setting
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 STATICFILES_DIRS = [
     BASE_DIR / "static",
 ]
 
+# CACHES: LocMemCache em desenvolvimento e testes, persistente/partilhado em produção
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache' if (DEBUG or ('test' in sys.argv)) else 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'vexylo_cache_table',
+    }
+}
+
 # 5. CONFIGURAÇÃO DE EMAIL FAIL-SAFE
-if os.getenv('EMAIL_HOST_USER') and os.getenv('EMAIL_HOST_PASSWORD'):
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
     EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
-    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
-    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
     EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't')
     EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False').lower() in ('true', '1', 't')
     DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
     EMAIL_TIMEOUT = 10
+    EMAIL_CONFIGURED = True
 else:
-    if DEBUG:
+    EMAIL_CONFIGURED = False
+    if DEBUG or ('test' in sys.argv):
         EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
     else:
+        if os.getenv('REQUIRE_EMAIL_IN_PROD', 'false').lower() in ('true', '1', 't'):
+            raise ImproperlyConfigured("CRÍTICO: EMAIL_HOST_USER e EMAIL_HOST_PASSWORD são obrigatórios em produção com REQUIRE_EMAIL_IN_PROD=true.")
         EMAIL_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
 
 LOGIN_URL = '/login/'

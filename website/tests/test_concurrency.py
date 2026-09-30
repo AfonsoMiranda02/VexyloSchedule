@@ -1,16 +1,19 @@
+import os
 import threading
 from datetime import date, time, timedelta
 from decimal import Decimal
 from django.test import TransactionTestCase
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.db import connection
 from website.models import BusinessInfo, BusinessOpeningHours, ServiceCategory, Service, StaffMember, Appointment
-from website.services.booking import BookingService, BookingError
+from website.services.booking import BookingService, BookingError, SlotOccupiedError
 
 class ConcurrencyBookingTests(TransactionTestCase):
     """
-    Testes de concorrência que simulam dois clientes a submeter exatamente
-    o mesmo horário e profissional no mesmo milissegundo.
+    Testes de concorrência com threads simultâneas sincronizadas via threading.Barrier.
+    Garante que sob race conditions em PostgreSQL com row-level locks (select_for_update),
+    apenas uma reserva sobrevive e a outra é rejeitada com erro de domínio.
     """
     def setUp(self):
         self.user1 = User.objects.create_user(username='concorrente1', password='Password123!')
@@ -18,98 +21,258 @@ class ConcurrencyBookingTests(TransactionTestCase):
         
         self.business = BusinessInfo.objects.create(
             name="Salão Concorrente",
-            address="Rua",
-            phone="900",
-            schedule="09-19"
+            address="Rua da Concorrência, 1",
+            phone="900000000",
+            schedule="Segunda a Sábado: 09:00 - 19:00"
         )
         for w in range(7):
             BusinessOpeningHours.objects.create(
                 business=self.business,
                 weekday=w,
-                is_open=(w != 6),
+                is_open=(w not in (2, 6)),
                 opening_time=time(9, 0),
                 closing_time=time(19, 0)
             )
             
         self.category = ServiceCategory.objects.create(name="Cabelo")
-        self.service = Service.objects.create(
+        self.service30 = Service.objects.create(
             category=self.category,
-            name="Corte Concorrência",
+            name="Corte 30min",
             price=Decimal('15.00'),
             duration=30
         )
-        self.staff = StaffMember.objects.create(name="Barbeiro Concorrência", role="Barbeiro")
+        self.service60 = Service.objects.create(
+            category=self.category,
+            name="Corte + Barba 60min",
+            price=Decimal('25.00'),
+            duration=60
+        )
+        self.staff1 = StaffMember.objects.create(name="Barbeiro A", role="Barbeiro", is_active=True)
 
-    def test_concurrent_double_booking_prevented(self):
-        """Duas threads a disputar o mesmo slot com o mesmo profissional: apenas uma pode ter sucesso."""
+    def _get_target_date(self):
         target_date = timezone.localdate() + timedelta(days=3)
-        while target_date.weekday() == 6:
+        while target_date.weekday() in (2, 6): # Quarta e Domingo fechados
             target_date += timedelta(days=1)
-            
-        target_time = time(11, 30)
-        
-        results = []
-        errors = []
+        return target_date
 
-        from django.db import connection
+    def test_concurrent_identical_slot_race(self):
+        """Duas threads disputam o mesmo slot (10:00 - 10:30) com o mesmo profissional."""
+        if os.getenv("CI_POSTGRES_REQUIRED") == "true":
+            self.assertEqual(connection.vendor, "postgresql", "CI_POSTGRES_REQUIRED=true está ativo mas a base de dados não é PostgreSQL!")
+
+        target_date = self._get_target_date()
+        target_time = time(10, 0)
 
         if connection.vendor != 'postgresql':
-            # Nota técnica: SQLite em memória (:memory:) isola a base de dados por thread.
-            # O teste de concorrência com threads reais é executado em PostgreSQL (conforme configurado no CI).
-            # Em SQLite, validamos a deteção estrita de colisão e integridade de slots:
+            # SQLite em memória isola tabelas por thread; teste sequencial de colisão
             appt1 = BookingService.book_appointment(
                 user=self.user1,
-                service=self.service,
+                service=self.service30,
                 target_date=target_date,
                 start_time=target_time,
-                staff_member=self.staff
+                staff_member=self.staff1
             )
             self.assertIsNotNone(appt1.id)
-            
             with self.assertRaises(BookingError):
                 BookingService.book_appointment(
                     user=self.user2,
-                    service=self.service,
+                    service=self.service30,
                     target_date=target_date,
                     start_time=target_time,
-                    staff_member=self.staff
+                    staff_member=self.staff1
                 )
             return
 
-        # Execução multi-thread real em PostgreSQL (com row-level locks select_for_update)
-        def book_attempt(user):
+        # Execução real com PostgreSQL e threading.Barrier
+        barrier = threading.Barrier(2)
+        results = []
+        errors = []
+
+        def race_worker(user):
+            connection.close() # Abre conexão isolada para esta thread
             try:
+                barrier.wait(timeout=5)
                 appt = BookingService.book_appointment(
                     user=user,
-                    service=self.service,
+                    service=self.service30,
                     target_date=target_date,
                     start_time=target_time,
-                    staff_member=self.staff
+                    staff_member=self.staff1
                 )
                 results.append(appt)
             except Exception as e:
                 errors.append(e)
+            finally:
+                connection.close()
 
-        t1 = threading.Thread(target=book_attempt, args=(self.user1,))
-        t2 = threading.Thread(target=book_attempt, args=(self.user2,))
+        t1 = threading.Thread(target=race_worker, args=(self.user1,))
+        t2 = threading.Thread(target=race_worker, args=(self.user2,))
 
         t1.start()
         t2.start()
 
-        t1.join()
-        t2.join()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
 
-        # O invariante fundamental: NUNCA podem existir duas marcações ativas no mesmo slot!
         active_appointments = Appointment.objects.filter(
             date=target_date,
             time=target_time,
-            staff_member=self.staff
+            staff_member=self.staff1
         ).exclude(status='Cancelada')
 
-        self.assertEqual(
-            active_appointments.count(), 1, 
-            "ERRO CRÍTICO: Ocorreu um double-booking! Ambas as threads conseguiram agendar o mesmo horário."
-        )
+        self.assertEqual(active_appointments.count(), 1, "Double booking detectado em PostgreSQL!")
+        self.assertEqual(len(results), 1, "Exatamente 1 reserva deve ter sucesso.")
+        self.assertEqual(len(errors), 1, "Exatamente 1 reserva deve falhar por colisão.")
+
+    def test_concurrent_overlapping_durations_race(self):
+        """
+        Thread 1 pede 10:00-11:00 (60min).
+        Thread 2 pede 10:30-11:00 (30min).
+        Mesmo com horas de início distintas, sobrepõem-se no intervalo 10:30-11:00.
+        Apenas uma pode suceder.
+        """
+        target_date = self._get_target_date()
+
+        if connection.vendor != 'postgresql':
+            appt1 = BookingService.book_appointment(
+                user=self.user1,
+                service=self.service60,
+                target_date=target_date,
+                start_time=time(10, 0),
+                staff_member=self.staff1
+            )
+            self.assertIsNotNone(appt1.id)
+            with self.assertRaises(BookingError):
+                BookingService.book_appointment(
+                    user=self.user2,
+                    service=self.service30,
+                    target_date=target_date,
+                    start_time=time(10, 30),
+                    staff_member=self.staff1
+                )
+            return
+
+        barrier = threading.Barrier(2)
+        results = []
+        errors = []
+
+        def worker_60():
+            connection.close()
+            try:
+                barrier.wait(timeout=5)
+                appt = BookingService.book_appointment(
+                    user=self.user1,
+                    service=self.service60,
+                    target_date=target_date,
+                    start_time=time(10, 0),
+                    staff_member=self.staff1
+                )
+                results.append(appt)
+            except Exception as e:
+                errors.append(e)
+            finally:
+                connection.close()
+
+        def worker_30():
+            connection.close()
+            try:
+                barrier.wait(timeout=5)
+                appt = BookingService.book_appointment(
+                    user=self.user2,
+                    service=self.service30,
+                    target_date=target_date,
+                    start_time=time(10, 30),
+                    staff_member=self.staff1
+                )
+                results.append(appt)
+            except Exception as e:
+                errors.append(e)
+            finally:
+                connection.close()
+
+        t1 = threading.Thread(target=worker_60)
+        t2 = threading.Thread(target=worker_30)
+
+        t1.start()
+        t2.start()
+
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        active = Appointment.objects.filter(
+            date=target_date,
+            staff_member=self.staff1
+        ).exclude(status='Cancelada')
+
+        self.assertEqual(active.count(), 1, "Sobrecarga de intervalo concorrente detectada!")
         self.assertEqual(len(results), 1)
         self.assertEqual(len(errors), 1)
 
+    def test_concurrent_any_staff_race_with_single_available_professional(self):
+        """
+        Ambos os utilizadores pedem 'Qualquer Profissional' às 11:00 para o mesmo dia,
+        havendo apenas 1 profissional cadastrado.
+        Apenas 1 utilizador pode obter a vaga.
+        """
+        target_date = self._get_target_date()
+        target_time = time(11, 0)
+
+        if connection.vendor != 'postgresql':
+            appt1 = BookingService.book_appointment(
+                user=self.user1,
+                service=self.service30,
+                target_date=target_date,
+                start_time=target_time,
+                staff_member=None
+            )
+            self.assertIsNotNone(appt1.id)
+            self.assertEqual(appt1.staff_member, self.staff1)
+
+            with self.assertRaises(BookingError):
+                BookingService.book_appointment(
+                    user=self.user2,
+                    service=self.service30,
+                    target_date=target_date,
+                    start_time=target_time,
+                    staff_member=None
+                )
+            return
+
+        barrier = threading.Barrier(2)
+        results = []
+        errors = []
+
+        def race_worker(user):
+            connection.close()
+            try:
+                barrier.wait(timeout=5)
+                appt = BookingService.book_appointment(
+                    user=user,
+                    service=self.service30,
+                    target_date=target_date,
+                    start_time=target_time,
+                    staff_member=None
+                )
+                results.append(appt)
+            except Exception as e:
+                errors.append(e)
+            finally:
+                connection.close()
+
+        t1 = threading.Thread(target=race_worker, args=(self.user1,))
+        t2 = threading.Thread(target=race_worker, args=(self.user2,))
+
+        t1.start()
+        t2.start()
+
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        active = Appointment.objects.filter(
+            date=target_date,
+            time=target_time
+        ).exclude(status='Cancelada')
+
+        self.assertEqual(active.count(), 1)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(errors), 1)

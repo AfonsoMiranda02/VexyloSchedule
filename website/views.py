@@ -7,17 +7,19 @@ from django.contrib.auth import login, get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
 from django.views.decorators.http import require_POST
+from django.utils.decorators import method_decorator
 from django.contrib import messages
 from django.utils import timezone
-from django.db.models import Count, Sum, Q
+from django.db.models import Count, Sum, Q, Prefetch
 from django.conf import settings
+from django.urls import reverse
 from django.contrib.auth import views as auth_views
 
 from .models import (
     BusinessInfo, BusinessOpeningHours, ServiceCategory, Service, 
     Appointment, StaffMember, Testimonial, UserProfile
 )
-from .forms import UserRegisterForm, AppointmentForm
+from .forms import UserRegisterForm, AppointmentForm, CompleteProfileForm
 from .services.booking import (
     BookingService, BookingError, BusinessClosedError, 
     InvalidSlotError, SlotOccupiedError, StaffUnavailableError
@@ -28,16 +30,31 @@ logger = logging.getLogger(__name__)
 
 
 def home_view(request):
-    """Página inicial pública do VexyloSchedule."""
+    """Página inicial pública do VexyloSchedule com serviços e categorias ativas."""
+    active_services_prefetch = Prefetch(
+        'service_set',
+        queryset=Service.objects.filter(is_active=True).order_by('name')
+    )
+    categories = (
+        ServiceCategory.objects
+        .prefetch_related(active_services_prefetch)
+        .filter(service__is_active=True)
+        .distinct()
+        .order_by('order', 'name')
+    )
     context = {
         'business_info': BusinessInfo.get_solo(),
-        'categories': ServiceCategory.objects.prefetch_related(
-            models_prefetch := models_prefetch if False else 'service_set'
-        ).all(),
+        'categories': categories,
         'staff': StaffMember.objects.filter(is_active=True),
         'testimonials': Testimonial.objects.filter(is_visible=True),
     }
     return render(request, 'website/home.html', context)
+
+
+@method_decorator(rate_limit('login', limit=5, period=300), name='dispatch')
+class CustomLoginView(auth_views.LoginView):
+    """Login com rate limiting por IP/conta para mitigar ataques de força bruta."""
+    template_name = 'registration/login.html'
 
 
 @rate_limit('register', limit=5, period=300)
@@ -56,6 +73,36 @@ def register_view(request):
     else:
         form = UserRegisterForm()
     return render(request, 'website/register.html', {'form': form})
+
+
+@login_required
+def complete_profile_view(request):
+    """
+    Página de aceitação explícita de Termos e Política de Privacidade
+    para utilizadores que entram via Google OAuth / Social Login.
+    """
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    
+    if profile.terms_accepted_at and profile.privacy_policy_accepted_at:
+        return redirect('dashboard')
+        
+    if request.method == 'POST':
+        form = CompleteProfileForm(request.POST)
+        if form.is_valid():
+            now = timezone.now()
+            profile.phone = form.cleaned_data['phone']
+            profile.terms_accepted_at = now
+            profile.privacy_policy_accepted_at = now
+            profile.save()
+            messages.success(request, "Registo completado com sucesso! Bem-vindo(a) ao VexyloSchedule.")
+            return redirect('dashboard')
+    else:
+        form = CompleteProfileForm(initial={'phone': profile.phone or ''})
+        
+    return render(request, 'website/complete_profile.html', {
+        'form': form,
+        'business_info': BusinessInfo.get_solo()
+    })
 
 
 @login_required
@@ -91,7 +138,7 @@ def book_appointment_view(request):
                 return redirect('dashboard')
             except BookingError as e:
                 messages.error(request, str(e))
-            except Exception as e:
+            except Exception:
                 logger.exception("Erro inesperado ao criar marcação")
                 messages.error(request, "Ocorreu um erro ao processar a marcação. Por favor verifique os dados e tente novamente.")
     else:
@@ -152,16 +199,23 @@ def cancel_appointment_view(request, pk):
         )
         return redirect('dashboard')
         
-    reason = request.POST.get('cancellation_reason', '').strip()[:100]
+    ALLOWED_CANCEL_REASONS = {
+        'Mudança de planos',
+        'Imprevisto',
+        'Insatisfação',
+        'Outro'
+    }
+    raw_reason = request.POST.get('cancellation_reason', '').strip()
+    reason = raw_reason if raw_reason in ALLOWED_CANCEL_REASONS else 'Outro'
     notes = request.POST.get('cancellation_notes', '').strip()[:500]
     
     try:
         appointment.transition_to('Cancelada')
-        appointment.cancellation_reason = reason or "Cancelada pelo cliente"
+        appointment.cancellation_reason = reason
         appointment.cancellation_notes = notes
         appointment.save()
         messages.success(request, "A sua marcação foi cancelada com sucesso.")
-    except Exception as e:
+    except Exception:
         logger.exception(f"Erro ao cancelar marcação #{pk}")
         messages.error(request, "Não foi possível cancelar a marcação. Por favor contacte o suporte.")
         
@@ -171,24 +225,31 @@ def cancel_appointment_view(request, pk):
 def get_available_times(request):
     """
     API de consulta de disponibilidade reutilizando BookingService.
-    Calcula slots sem N+1 queries e retorna informação sobre dias de funcionamento.
+    Valida parâmetros de entrada estritamente, retornando HTTP 400 em caso de inputs inválidos.
     """
     date_str = request.GET.get('date')
     staff_id = request.GET.get('staff_id')
     service_id = request.GET.get('service_id')
     
     if not date_str or not service_id:
-        return JsonResponse({'available_times': []})
+        return JsonResponse({'error': 'Parâmetros date e service_id são obrigatórios.'}, status=400)
         
     try:
         selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Formato de data inválido. Utilize o formato AAAA-MM-DD.'}, status=400)
+
+    try:
         service = Service.objects.get(id=service_id, is_active=True)
-    except (ValueError, Service.DoesNotExist):
-        return JsonResponse({'available_times': []})
+    except (Service.DoesNotExist, ValueError):
+        return JsonResponse({'error': 'Serviço inexistente ou inativo.'}, status=400)
         
     staff_member = None
     if staff_id:
-        staff_member = StaffMember.objects.filter(id=staff_id, is_active=True).first()
+        try:
+            staff_member = StaffMember.objects.get(id=staff_id, is_active=True)
+        except (StaffMember.DoesNotExist, ValueError):
+            return JsonResponse({'error': 'Profissional especificado não existe ou encontra-se inativo.'}, status=400)
 
     slots = BookingService.get_available_slots(
         target_date=selected_date,
@@ -227,14 +288,17 @@ def admin_dashboard_api_view(request):
         chart_labels.append(day.strftime('%d/%m'))
         chart_data.append(count)
 
-    # Top Serviços (exclui canceladas para refletir procura real)
+    # Top Serviços com base no nome gravado no momento da marcação (snapshots históricos)
     top_services_qs = (
         Appointment.objects.exclude(status='Cancelada')
-        .values('service__name')
+        .values('service_name_at_booking', 'service__name')
         .annotate(total=Count('id'))
         .order_by('-total')[:5]
     )
-    top_services_labels = [item['service__name'] or 'Serviço' for item in top_services_qs]
+    top_services_labels = [
+        item['service_name_at_booking'] or item['service__name'] or 'Serviço' 
+        for item in top_services_qs
+    ]
     top_services_data = [item['total'] for item in top_services_qs]
 
     # Distribuição de estados
@@ -281,7 +345,7 @@ def admin_dashboard_api_view(request):
 def api_calendar_events(request):
     """
     Retorna os eventos de calendário em formato compatível com FullCalendar.
-    Usa select_related para performance e sanitiza propriedades estendidas.
+    Valida inputs de datas ISO, respeita intervalo exclusivo de fim e usa reverse para URLs.
     """
     start_date = request.GET.get('start')
     end_date = request.GET.get('end')
@@ -290,9 +354,21 @@ def api_calendar_events(request):
     appointments = Appointment.objects.select_related('user', 'service', 'staff_member').all()
     
     if start_date:
-        appointments = appointments.filter(date__gte=start_date.split('T')[0])
+        try:
+            start_clean = start_date.split('T')[0]
+            start_val = datetime.strptime(start_clean, '%Y-%m-%d').date()
+            appointments = appointments.filter(date__gte=start_val)
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'Parâmetro start inválido.'}, status=400)
+
     if end_date:
-        appointments = appointments.filter(date__lte=end_date.split('T')[0])
+        try:
+            end_clean = end_date.split('T')[0]
+            end_val = datetime.strptime(end_clean, '%Y-%m-%d').date()
+            # FullCalendar end é exclusivo: data estritamente menor que end_val
+            appointments = appointments.filter(date__lt=end_val)
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'Parâmetro end inválido.'}, status=400)
         
     if search_query:
         appointments = appointments.filter(
@@ -302,14 +378,16 @@ def api_calendar_events(request):
         )
         
     events = []
+    colors = {
+        'Confirmada': '#10b981',
+        'Pendente': '#f59e0b',
+        'Aguardando Fecho': '#8b5cf6',
+        'Concluída': '#3b82f6',
+        'Cancelada': '#ef4444',
+        'Faltou': '#6b7280'
+    }
+
     for appt in appointments:
-        colors = {
-            'Confirmada': '#10b981',
-            'Pendente': '#f59e0b',
-            'Concluída': '#3b82f6',
-            'Cancelada': '#ef4444',
-            'Faltou': '#6b7280'
-        }
         color = colors.get(appt.status, '#6b7280')
         client_name = appt.user.get_full_name() or appt.user.username
             
@@ -321,7 +399,7 @@ def api_calendar_events(request):
             'title': f"{appt.effective_service_name} - {client_name}",
             'start': dt_str,
             'end': f"{appt.date.isoformat()}T{end_time.isoformat()}",
-            'url': f"/vexylo-admin/website/appointment/{appt.id}/change/",
+            'url': reverse('admin:website_appointment_change', args=[appt.id]),
             'backgroundColor': color,
             'borderColor': color,
             'extendedProps': {
@@ -375,7 +453,7 @@ def submit_testimonial(request):
         })
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Formato de dados JSON inválido.'}, status=400)
-    except Exception as e:
+    except Exception:
         logger.exception("Erro inesperado ao submeter testemunho")
         return JsonResponse({
             'success': False, 
@@ -391,9 +469,10 @@ def terms_conditions_view(request):
     return render(request, 'website/terms_conditions.html', {'business_info': BusinessInfo.get_solo()})
 
 
+@method_decorator(rate_limit('password_reset', limit=3, period=900), name='dispatch')
 class CustomPasswordResetView(auth_views.PasswordResetView):
     """
-    Recuperação de password segura contra envenenamento de cabeçalho Host.
+    Recuperação de password segura contra envenenamento de cabeçalho Host e abusos de spam.
     Garante o envio de exatamente UM email através da chamada direta a form.save
     sem invocar super().form_valid(form) duplicado.
     """
@@ -401,12 +480,11 @@ class CustomPasswordResetView(auth_views.PasswordResetView):
         # 1. Configuração canónica explícita se definida
         canonical = getattr(settings, 'CANONICAL_HOST', None)
         if canonical:
-            return canonical
+            return canonical.split(':')[0]
             
         # 2. Primeiro host permitido não-wildcard
         allowed = [h for h in settings.ALLOWED_HOSTS if h not in ('*', '')]
         if allowed:
-            # Se for um domínio genérico com ponto à frente (ex: .onrender.com), usar o host atual se for subdomínio
             req_host = self.request.get_host().split(':')[0]
             for h in allowed:
                 if h.startswith('.') and req_host.endswith(h):
@@ -432,6 +510,4 @@ class CustomPasswordResetView(auth_views.PasswordResetView):
         }
         # Envia exatamente 1 email usando o domínio fidedigno
         form.save(**opts)
-        # Redireciona diretamente para a página de sucesso sem chamar super().form_valid
-        # (pois o super().form_valid chamaria form.save novamente enviando 2 emails)
         return HttpResponseRedirect(self.get_success_url())

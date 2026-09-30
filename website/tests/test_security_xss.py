@@ -67,3 +67,24 @@ class SecurityAndXSSTests(TestCase):
         appt.refresh_from_db()
         self.assertEqual(appt.status, 'Pendente')
         self.assertNotEqual(appt.status, 'Concluída')
+
+    def test_admin_calendar_template_uses_safe_dom_apis_and_no_innerhtml(self):
+        """Regressão estática: o template do FullCalendar no admin deve usar textContent e nunca innerHTML/html injection."""
+        import os
+        from django.conf import settings
+
+        template_path = os.path.join(settings.BASE_DIR, 'website', 'templates', 'admin', 'website', 'appointment', 'change_list.html')
+        self.assertTrue(os.path.exists(template_path), f"Template {template_path} não encontrado.")
+
+        with open(template_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Proibir padrões vulneráveis
+        self.assertNotIn('{ html:', content, "Template não deve usar FullCalendar { html: ... }")
+        self.assertNotIn('innerHTML =', content, "Template não deve usar innerHTML.")
+        self.assertNotIn('${props.client_name}', content, "Template não deve interpolar client_name diretamente em strings HTML.")
+        self.assertNotIn('${props.service_name}', content, "Template não deve interpolar service_name diretamente em strings HTML.")
+
+        # Garantir uso de APIs DOM seguras
+        self.assertIn('textContent', content, "Template deve usar textContent para renderizar propriedades.")
+        self.assertIn('createElement', content, "Template deve usar createElement para construir a árvore DOM.")

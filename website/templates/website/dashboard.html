@@ -44,6 +44,8 @@
                         <span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-3 py-1 rounded-full">Pendente</span>
                     {% elif apt.status == 'Confirmada' %}
                         <span class="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full">Confirmada</span>
+                    {% elif apt.status == 'Aguardando Fecho' %}
+                        <span class="bg-purple-100 text-purple-800 text-xs font-bold px-3 py-1 rounded-full">Aguardando Fecho</span>
                     {% elif apt.status == 'Concluída' %}
                         <span class="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">Concluída</span>
                     {% elif apt.status == 'Faltou' %}
@@ -78,8 +80,8 @@
                 {% if apt.status == 'Pendente' or apt.status == 'Confirmada' %}
                 <div class="mt-auto space-y-2.5 pt-2">
                     <!-- SMART WHATSAPP BUTTON -->
-                    {% if business_info.whatsapp %}
-                    <a href="https://wa.me/{{ business_info.whatsapp }}?text=Olá! Acabei de registar uma marcação para o serviço *{{ apt.effective_service_name|urlencode }}* no dia {{ apt.date|date:'d/m/Y' }} às {{ apt.time|time:'H:i' }}." target="_blank" rel="noopener noreferrer" class="block w-full text-center bg-[#25D366] hover:bg-[#1DA851] text-white py-3 rounded-2xl font-bold transition shadow-sm">
+                    {% if business_info.clean_whatsapp %}
+                    <a href="https://wa.me/{{ business_info.clean_whatsapp }}?text=Olá! Acabei de registar uma marcação para o serviço *{{ apt.effective_service_name|urlencode }}* no dia {{ apt.date|date:'d/m/Y' }} às {{ apt.time|time:'H:i' }}." target="_blank" rel="noopener noreferrer" class="block w-full text-center bg-[#25D366] hover:bg-[#1DA851] text-white py-3 rounded-2xl font-bold transition shadow-sm">
                         <i class="fa-brands fa-whatsapp mr-2 text-xl align-middle"></i> Enviar Mensagem
                     </a>
                     {% endif %}

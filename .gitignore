@@ -1,6 +1,7 @@
 # Environments and Secrets
 .env
 .env.*
+!.env.example
 *.env
 .secret_key
 venv/
@@ -72,3 +73,7 @@ htmlcov/
 .gemini/
 .antigravity/
 .agents/
+
+# Node / Frontend
+node_modules/
+package-lock.json
